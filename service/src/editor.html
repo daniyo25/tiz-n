@@ -40,6 +40,14 @@
   .app button { flex: none; }
   .app button.added { color: #4ade80; }
   .two { display: flex; gap: 8px; }
+  .hidden { display: none !important; }
+  .progress { height: 6px; background: #0c0d10; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .progress div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  code { background: #0c0d10; padding: 2px 6px; border-radius: 6px; font-size: 13px; word-break: break-all; }
+  #haList { max-height: 360px; overflow-y: auto; margin-top: 8px; }
+  #haList label { display: flex; gap: 10px; align-items: center; color: var(--text); font-size: 15px; margin: 0; padding: 8px 0; border-top: 1px solid var(--line); }
+  #haList input { width: auto; }
+  #haList .st { margin-left: auto; color: var(--muted); font-size: 13px; }
   .two > * { flex: 1; }
 </style>
 </head>
@@ -63,6 +71,43 @@
     <label for="city">Ciudad del tiempo</label>
     <div class="row-head"><input id="city"><button id="findCity">Buscar</button></div>
     <p class="muted" id="coords"></p>
+  </div>
+
+  <div class="card">
+    <h2>Enviar a la tele</h2>
+    <p class="muted">Una foto o un vídeo de este móvil, o un enlace de YouTube o de un vídeo. Se abre en la tele al momento.</p>
+    <label for="sendFile">Foto o vídeo</label>
+    <input id="sendFile" type="file" accept="image/*,video/*,audio/*">
+    <div class="progress"><div id="sendBar"></div></div>
+    <label for="sendUrl">Enlace</label>
+    <div class="row-head"><input id="sendUrl" placeholder="https://youtu.be/…"><button id="sendLink">Enviar</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Home Assistant</h2>
+    <p class="muted">Dirección de tu Home Assistant y un token de larga duración (Perfil → Seguridad → Tokens). En la tele, OK sobre una luz o un enchufe lo enciende o lo apaga.</p>
+    <label for="haUrl">Dirección</label>
+    <input id="haUrl" placeholder="http://192.168.1.x:8123">
+    <label for="haToken">Token</label>
+    <input id="haToken" type="password" placeholder="eyJ…">
+    <div class="actions"><button id="haLoad">Cargar entidades</button></div>
+    <input id="haFilter" class="hidden" placeholder="Buscar entidad…">
+    <div id="haList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Spotify</h2>
+    <div id="spState" class="muted">Comprobando…</div>
+    <div id="spSetup" class="hidden">
+      <p class="muted">1. En developer.spotify.com crea una app (Web API) y añade esta Redirect URI: <code id="spRedirect"></code><br>
+      2. Pega aquí su Client ID y pulsa Conectar.<br>
+      3. Inicia sesión. Al final el navegador dirá que no puede abrir la página: copia la dirección de la barra y pégala abajo.</p>
+      <label for="spClient">Client ID</label>
+      <div class="row-head"><input id="spClient"><button id="spLogin">Conectar</button></div>
+      <label for="spCode">Dirección a la que te llevó Spotify</label>
+      <div class="row-head"><input id="spCode" placeholder="http://127.0.0.1:8091/spotify/callback?code=…"><button id="spSend">Listo</button></div>
+    </div>
+    <div class="actions"><button id="spLogout" class="danger hidden">Desconectar</button></div>
   </div>
 
   <div class="card">
@@ -151,6 +196,7 @@
       idField,
       input(t, 'color', 'Color', { type: 'color' }),
       input(t, 'icon', 'Logo (URL, opcional)'),
+      input(t, 'banner', 'Imagen panorámica (URL, rellena toda la tarjeta)', { full: true }),
       el('div', { 'class': 'actions full' }, [
         el('button', { text: '↑', onclick: function () { move(row.tiles, i, -1); } }),
         el('button', { text: '↓', onclick: function () { move(row.tiles, i, 1); } }),
@@ -161,6 +207,9 @@
 
   function render() {
     $('title').value = cfg.title || '';
+    var ha = (cfg.widgets && cfg.widgets.homeassistant) || {};
+    if (document.activeElement !== $('haUrl')) $('haUrl').value = ha.url || '';
+    if (document.activeElement !== $('haToken')) $('haToken').value = ha.token || '';
     $('background').value = cfg.background || '';
     $('city').value = (cfg.weather && cfg.weather.city) || '';
     $('coords').textContent = cfg.weather ? cfg.weather.latitude + ', ' + cfg.weather.longitude : '';
@@ -260,8 +309,123 @@
 
   $('appFilter').addEventListener('input', renderApps);
 
+  // ---------- Enviar a la tele ----------
+
+  $('sendFile').addEventListener('change', function () {
+    var f = $('sendFile').files[0];
+    if (!f) return;
+    if (!$('pin').value) return msg('Escribe el PIN de la tele', true);
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/send');
+    xhr.setRequestHeader('X-Pin', $('pin').value);
+    xhr.setRequestHeader('X-Name', f.name);
+    xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
+    xhr.upload.onprogress = function (e) { if (e.lengthComputable) $('sendBar').style.width = (e.loaded / e.total * 100) + '%'; };
+    xhr.onload = function () {
+      var r = {};
+      try { r = JSON.parse(xhr.responseText); } catch (e) { /* vacío */ }
+      msg(r.ok ? 'Enviado a la tele' : (r.error || 'No se pudo enviar'), !r.ok);
+      setTimeout(function () { $('sendBar').style.width = '0'; }, 1500);
+      $('sendFile').value = '';
+    };
+    xhr.onerror = function () { msg('No se pudo enviar', true); };
+    msg('Enviando ' + f.name + '…');
+    xhr.send(f);
+  });
+
+  $('sendLink').addEventListener('click', function () {
+    if (!$('pin').value) return msg('Escribe el PIN de la tele', true);
+    api('POST', '/send', { url: $('sendUrl').value }).then(function (r) {
+      msg(r.ok ? (r.kind === 'web' ? 'Enviado, pero la tele solo abre fotos, vídeos y YouTube' : 'Enviado a la tele') : r.error, !r.ok);
+      if (r.ok) $('sendUrl').value = '';
+    }).catch(function () { msg('No se pudo enviar', true); });
+  });
+
+  // ---------- Home Assistant ----------
+
+  var haEntities = [];
+  function haCfg() {
+    cfg.widgets = cfg.widgets || {};
+    cfg.widgets.homeassistant = cfg.widgets.homeassistant || { url: '', token: '', entities: [] };
+    return cfg.widgets.homeassistant;
+  }
+  function renderHa() {
+    var ha = haCfg();
+    var q = $('haFilter').value.trim().toLowerCase();
+    var box = $('haList');
+    box.innerHTML = '';
+    haEntities.filter(function (e) {
+      return ha.entities.indexOf(e.id) !== -1 || !q || (e.name + ' ' + e.id).toLowerCase().indexOf(q) !== -1;
+    }).sort(function (a, b) {
+      return (ha.entities.indexOf(b.id) !== -1) - (ha.entities.indexOf(a.id) !== -1) || a.name.localeCompare(b.name);
+    }).slice(0, 80).forEach(function (e) {
+      var cb = el('input', { type: 'checkbox' });
+      cb.checked = ha.entities.indexOf(e.id) !== -1;
+      cb.addEventListener('change', function () {
+        var i = ha.entities.indexOf(e.id);
+        if (cb.checked && i === -1) ha.entities.push(e.id);
+        if (!cb.checked && i !== -1) ha.entities.splice(i, 1);
+      });
+      box.appendChild(el('label', {}, [cb, el('span', { text: e.name }), el('span', { 'class': 'st', text: e.state })]));
+    });
+  }
+  ['haUrl', 'haToken'].forEach(function (k) {
+    $(k).addEventListener('input', function () { haCfg()[k === 'haUrl' ? 'url' : 'token'] = $(k).value.trim(); });
+  });
+  $('haFilter').addEventListener('input', renderHa);
+  $('haLoad').addEventListener('click', function () {
+    var ha = haCfg();
+    if (!$('pin').value) return msg('Escribe el PIN de la tele', true);
+    msg('Conectando con Home Assistant…');
+    api('POST', '/ha/states', { url: ha.url, token: ha.token }).then(function (r) {
+      if (!r.ok) return msg(r.error, true);
+      haEntities = r.entities;
+      $('haFilter').classList.remove('hidden');
+      renderHa();
+      msg(r.entities.length + ' entidades. Marca las que quieras y pulsa Guardar.');
+    }).catch(function () { msg('No se pudo conectar', true); });
+  });
+
+  // ---------- Spotify ----------
+
+  function spotifyStatus() {
+    api('GET', '/spotify/status').then(function (r) {
+      $('spRedirect').textContent = r.redirect;
+      $('spState').textContent = r.connected ? 'Conectado. En la tele, OK sobre el widget pausa o reanuda y derecha pasa de canción (pausar necesita Premium).' : 'Sin conectar.';
+      $('spSetup').classList.toggle('hidden', r.connected);
+      $('spLogout').classList.toggle('hidden', !r.connected);
+      if (r.clientId) $('spClient').value = r.clientId;
+    }).catch(function () { $('spState').textContent = 'El servicio de la tele no responde'; });
+  }
+  $('spLogin').addEventListener('click', function () {
+    if (!$('pin').value) return msg('Escribe el PIN de la tele', true);
+    api('POST', '/spotify/login', { clientId: $('spClient').value }).then(function (r) {
+      if (!r.ok) return msg(r.error, true);
+      // Si el navegador bloquea la ventana nueva, se va en esta misma (al volver, el PIN sigue guardado)
+      if (!window.open(r.url, '_blank')) location.href = r.url;
+      msg('Inicia sesión en Spotify y vuelve aquí con la dirección');
+    });
+  });
+  $('spSend').addEventListener('click', function () {
+    api('POST', '/spotify/code', { url: $('spCode').value }).then(function (r) {
+      msg(r.ok ? 'Spotify conectado' : r.error, !r.ok);
+      spotifyStatus();
+    });
+  });
+  $('spLogout').addEventListener('click', function () {
+    api('POST', '/spotify/logout').then(function () { spotifyStatus(); });
+  });
+  spotifyStatus();
+
   // El PIN se recuerda en este móvil
   try { $('pin').value = localStorage.getItem('daniLauncherPin') || ''; } catch (e) { /* sin almacenamiento */ }
+  // Al entrar desde el código QR de la tele, el PIN viene en la dirección
+  var qp = /[?&]pin=(\d{4})/.exec(location.search);
+  if (qp) {
+    $('pin').value = qp[1];
+    try { localStorage.setItem('daniLauncherPin', qp[1]); } catch (e) { /* sin almacenamiento */ }
+    if (history.replaceState) history.replaceState(null, '', location.pathname);
+  }
   $('pin').addEventListener('input', function () {
     try { localStorage.setItem('daniLauncherPin', $('pin').value); } catch (e) { /* sin almacenamiento */ }
   });

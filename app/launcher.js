@@ -13,7 +13,7 @@
   };
   var TB_WS_URL = 'ws://127.0.0.1:8081';
   var SERVICE_URL = 'http://127.0.0.1:8091';
-  var SERVICE_VERSION = 4; // la que trae service/service.js en esta versión
+  var SERVICE_VERSION = 6; // la que trae service/service.js en esta versión
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, Error: 8, ModuleAction: 10 };
 
   var WEATHER_CODES = {
@@ -30,6 +30,16 @@
   var SIZES = [{ name: 'Pequeño', value: 's' }, { name: 'Normal', value: 'm' }, { name: 'Grande', value: 'l' }];
   var FONTS = [{ name: 'Samsung', value: 'sans' }, { name: 'Serif', value: 'serif' }, { name: 'Máquina de escribir', value: 'mono' }];
   var STYLES = [{ name: 'Apple TV', value: 'tvos' }, { name: 'Clásico', value: 'classic' }];
+  var NEWS = [
+    { name: 'El País', value: 'https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada' },
+    { name: 'El Mundo', value: 'https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml' },
+    { name: 'elDiario.es', value: 'https://www.eldiario.es/rss/' },
+    { name: '20minutos', value: 'https://www.20minutos.es/rss/' },
+    { name: 'BBC Mundo', value: 'https://feeds.bbci.co.uk/mundo/rss.xml' },
+    { name: 'Marca', value: 'https://e00-marca.uecdn.es/rss/portada.xml' },
+    { name: 'Xataka', value: 'https://www.xataka.com/feedburner.xml' },
+    { name: 'Ninguna', value: '' }
+  ];
   var SAVER = [{ name: 'Nunca', value: 0 }, { name: '2 min', value: 2 }, { name: '5 min', value: 5 }, { name: '10 min', value: 10 }, { name: '30 min', value: 30 }];
 
   var config = null;
@@ -41,6 +51,12 @@
   var ws = null;
   var pendingModule = null;
   var serviceInfo = null;
+  // Zonas del mando: menú de arriba, filas de accesos y columna de widgets
+  var zone = 'rows';
+  var topSel = 0;
+  var sideSel = 0;
+  var newsItems = [];   // [{ title, text, date, image }]
+  var BOOT = Date.now(); // para pedir los logos de nuevo cada vez que se abre el módulo
 
   function $(id) { return document.getElementById(id); }
 
@@ -79,6 +95,7 @@
     cfg.theme = cfg.theme || {};
     cfg.screensaver = cfg.screensaver || { minutes: 5 };
     cfg.widgets = cfg.widgets || {};
+    delete cfg.widgets.calendar;
     return cfg;
   }
 
@@ -154,6 +171,7 @@
       var cw = data.current_weather;
       $('weather').textContent = w.city + ' · ' + Math.round(cw.temperature) + '°C ' + (WEATHER_CODES[cw.weathercode] || '');
       if (config.widgets.forecast && data.daily) renderForecast(data.daily);
+      buildSide();
     });
   }
 
@@ -186,33 +204,6 @@
     box.appendChild(wrap);
   }
 
-  function renderCalendar() {
-    if (!config.widgets.calendar) { $('w-calendar').className = 'widget hidden'; return; }
-    var now = new Date();
-    var month = now.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-    var box = widget('w-calendar', month);
-    var grid = document.createElement('div');
-    grid.className = 'cal';
-    ['L', 'M', 'X', 'J', 'V', 'S', 'D'].forEach(function (d) {
-      var c = document.createElement('div');
-      c.className = 'wd';
-      c.textContent = d;
-      grid.appendChild(c);
-    });
-    var first = new Date(now.getFullYear(), now.getMonth(), 1);
-    var offset = (first.getDay() + 6) % 7; // semana empieza en lunes
-    for (var i = 0; i < 42; i++) {
-      var day = new Date(first.getFullYear(), first.getMonth(), 1 - offset + i);
-      if (i % 7 === 0 && i > 0 && day.getMonth() !== now.getMonth()) break;
-      var cell = document.createElement('div');
-      cell.textContent = day.getDate();
-      if (day.getMonth() !== now.getMonth()) cell.className = 'other';
-      else if (day.getDate() === now.getDate()) cell.className = 'today';
-      grid.appendChild(cell);
-    }
-    box.appendChild(grid);
-  }
-
   function proxyUrl(url, token) {
     return SERVICE_URL + '/proxy?url=' + encodeURIComponent(url) + (token ? '&token=' + encodeURIComponent(token) : '');
   }
@@ -223,24 +214,72 @@
     request('GET', proxyUrl(n.url), undefined, function (err, text) {
       if (err || !text) return;
       var doc = new DOMParser().parseFromString(text, 'text/xml');
-      var items = doc.querySelectorAll('item > title, entry > title');
+      var items = doc.querySelectorAll('item, entry');
       if (!items.length) return;
+      newsItems = [];
+      for (var i = 0; i < items.length && i < 25; i++) newsItems.push(parseNewsItem(items[i]));
       var box = widget('w-news', n.title || 'Noticias');
       var list = document.createElement('ul');
       list.className = 'news';
-      for (var i = 0; i < items.length && i < 4; i++) {
+      newsItems.forEach(function (item) {
         var li = document.createElement('li');
-        li.textContent = items[i].textContent.trim();
+        var t = document.createElement('span');
+        t.textContent = item.title;
+        li.appendChild(t);
         list.appendChild(li);
-      }
+      });
       box.appendChild(list);
+      buildSide();
     }, true);
   }
 
+  function childText(node, names) {
+    for (var i = 0; i < node.childNodes.length; i++) {
+      var c = node.childNodes[i];
+      if (names.indexOf(c.nodeName) !== -1 && c.textContent) return c.textContent.trim();
+    }
+    return '';
+  }
+
+  // Quita las etiquetas HTML que traen las descripciones de los RSS
+  function plainText(html) {
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    var imgs = div.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) imgs[i].parentNode.removeChild(imgs[i]);
+    return (div.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function parseNewsItem(node) {
+    var image = '';
+    for (var i = 0; i < node.childNodes.length && !image; i++) {
+      var c = node.childNodes[i];
+      if (!c.getAttribute) continue;
+      var type = c.getAttribute('type') || c.getAttribute('medium') || '';
+      if ((c.nodeName === 'enclosure' || c.nodeName === 'media:content' || c.nodeName === 'media:thumbnail') &&
+          (!type || type.indexOf('image') === 0) && c.getAttribute('url')) image = c.getAttribute('url');
+    }
+    var date = childText(node, ['pubDate', 'updated', 'published', 'dc:date']);
+    return {
+      title: childText(node, ['title']),
+      text: plainText(childText(node, ['description', 'content:encoded', 'summary', 'content', 'media:description'])),
+      date: date ? new Date(date) : null,
+      image: image
+    };
+  }
+
+  var HA_TOGGLE = { light: 'toggle', 'switch': 'toggle', fan: 'toggle', input_boolean: 'toggle', automation: 'toggle',
+    cover: 'toggle', media_player: 'media_play_pause', script: 'turn_on', scene: 'turn_on', button: 'press' };
+  var HA_STATES = { on: 'Encendido', off: 'Apagado', open: 'Abierto', closed: 'Cerrado', playing: 'Reproduciendo',
+    paused: 'En pausa', idle: 'Inactivo', unavailable: 'No disponible', home: 'En casa', not_home: 'Fuera',
+    locked: 'Cerrado', unlocked: 'Abierto', scening: '' };
+  var haTimer = null;
+
   function loadHomeAssistant() {
     var ha = config.widgets.homeassistant;
-    if (!ha || !ha.url || !ha.token || !ha.entities || !ha.entities.length) {
+    if (!ha || ha.enabled === false || !ha.url || !ha.token || !ha.entities || !ha.entities.length) {
       $('w-ha').className = 'widget hidden';
+      buildSide();
       return;
     }
     var results = [];
@@ -249,7 +288,8 @@
       getJSON(proxyUrl(ha.url.replace(/\/$/, '') + '/api/states/' + id, ha.token), function (err, s) {
         if (!err && s && s.state !== undefined) {
           var unit = s.attributes && s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : '';
-          results[i] = { name: (s.attributes && s.attributes.friendly_name) || id, value: s.state + unit };
+          results[i] = { id: id, name: (s.attributes && s.attributes.friendly_name) || id,
+            value: (HA_STATES[s.state] !== undefined ? HA_STATES[s.state] : s.state) + unit, on: s.state === 'on' || s.state === 'open' || s.state === 'playing' };
         }
         if (--pending) return;
         var box = widget('w-ha', 'Casa');
@@ -258,22 +298,174 @@
         results.forEach(function (r) {
           if (!r) return;
           var line = document.createElement('div');
+          var domain = r.id.split('.')[0];
+          line.className = 'ha-item' + (HA_TOGGLE[domain] ? ' can' : '') + (r.on ? ' on' : '');
+          line.setAttribute('data-id', r.id);
           line.innerHTML = '<span></span><span class="v"></span>';
           line.children[0].textContent = r.name;
           line.children[1].textContent = r.value;
           wrap.appendChild(line);
         });
         box.appendChild(wrap);
+        buildSide();
       });
     });
+  }
+
+  // OK sobre una entidad de Home Assistant: encender/apagar, abrir/cerrar o activar
+  function haAction(id) {
+    var ha = config.widgets.homeassistant;
+    var domain = id.split('.')[0];
+    var service = HA_TOGGLE[domain];
+    if (!service) return setStatus('Esta entidad solo se puede ver');
+    var target = ha.url.replace(/\/$/, '') + '/api/services/' + domain + '/' + service;
+    request('POST', proxyUrl(target, ha.token), { entity_id: id }, function (err) {
+      if (err) return setStatus('Home Assistant no responde');
+      clearTimeout(haTimer);
+      haTimer = setTimeout(loadHomeAssistant, 600);
+    });
+  }
+
+  // ---------- Spotify ----------
+
+  var spotifyNow = null;
+
+  function msText(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + pad(s % 60); }
+
+  function loadSpotify() {
+    if (config.widgets.spotify === false) { $('w-spotify').className = 'widget hidden'; buildSide(); return; }
+    getJSON(SERVICE_URL + '/spotify/now', function (err, d) {
+      if (err || !d || !d.connected) { $('w-spotify').className = 'widget hidden'; buildSide(); return; }
+      spotifyNow = d;
+      var box = widget('w-spotify', 'Spotify');
+      var it = d.item;
+      var wrap = document.createElement('div');
+      wrap.className = 'sp';
+      if (!it) {
+        wrap.appendChild(line('No suena nada', 'sp-idle'));
+      } else {
+        var img = document.createElement('img');
+        if (it.image) img.src = it.image;
+        wrap.appendChild(img);
+        var txt = document.createElement('div');
+        txt.className = 'sp-txt';
+        txt.appendChild(line(it.title, 'sp-title'));
+        txt.appendChild(line(it.artist, 'sp-artist'));
+        var bar = document.createElement('div');
+        bar.className = 'sp-bar';
+        var fill = document.createElement('div');
+        fill.style.width = (it.duration ? Math.min(100, it.progress / it.duration * 100) : 0) + '%';
+        bar.appendChild(fill);
+        txt.appendChild(bar);
+        txt.appendChild(line((d.playing ? '▶  ' : '❚❚  ') + msText(it.progress) + ' / ' + msText(it.duration), 'sp-time'));
+        wrap.appendChild(txt);
+      }
+      box.appendChild(wrap);
+      buildSide();
+    });
+  }
+
+  function spotifyControl(action) {
+    getJSON(SERVICE_URL + '/spotify/control?action=' + action, function (err, d) {
+      if (err || !d.ok) setStatus('Spotify: ' + errText(err, d) + (d && /premium/i.test(d.error || '') ? '' : ''));
+      setTimeout(loadSpotify, 500);
+    });
+  }
+
+  // ---------- Enviar desde el móvil ----------
+
+  var lastInbox = null;
+  var viewerItem = null;
+
+  function checkInbox() {
+    if (!$('saver')) return;
+    getJSON(SERVICE_URL + '/inbox', function (err, d) {
+      if (err || !d) return;
+      // Lo enviado antes de abrir el launcher no se muestra
+      if (lastInbox === null) { lastInbox = d.item ? d.item.id : 0; return; }
+      if (!d.item) return;
+      if (d.item.id === lastInbox) return;
+      lastInbox = d.item.id;
+      showSent(d.item);
+    });
+  }
+
+  function showSent(item) {
+    if ($('saver').className === 'on') stopSaver();
+    if (item.kind === 'youtube') {
+      setStatus('Abriendo en YouTube…');
+      return getJSON(SERVICE_URL + '/launch?id=111299001912&payload=' + encodeURIComponent('v=' + item.video), function () {});
+    }
+    if (item.kind === 'web') return setStatus('Solo se pueden enviar fotos, vídeos o enlaces de YouTube');
+    closePanels();
+    var v = $('viewer');
+    v.innerHTML = '';
+    viewerItem = item;
+    var media;
+    if (item.kind === 'image') {
+      media = document.createElement('img');
+    } else {
+      media = document.createElement('video');
+      media.autoplay = true;
+      media.onended = function () { closeViewer(); };
+    }
+    media.src = item.src;
+    media.onerror = function () { setStatus('No se pudo abrir lo enviado'); closeViewer(); };
+    v.appendChild(media);
+    v.appendChild(line(item.kind === 'video' ? 'OK pausa · ←→ 10 s · Volver para cerrar' : 'Volver para cerrar', 'viewer-hint'));
+    v.className = 'on';
+  }
+
+  function closeViewer() {
+    var v = $('viewer');
+    var media = v.querySelector('video');
+    if (media) { media.pause(); media.removeAttribute('src'); media.load(); }
+    v.className = '';
+    v.innerHTML = '';
+    viewerItem = null;
+  }
+
+  function viewerKey(code) {
+    var media = $('viewer').querySelector('video');
+    if (code === KEY.BACK) return closeViewer();
+    if (!media) return;
+    if (code === KEY.ENTER) { if (media.paused) media.play(); else media.pause(); }
+    if (code === KEY.LEFT || code === KEY.RIGHT) media.currentTime = Math.max(0, media.currentTime + (code === KEY.RIGHT ? 10 : -10));
   }
 
   // ---------- Filas de accesos ----------
 
   function iconUrl(t) {
     if (t.icon) return t.icon;
-    if (t.type === 'tvapp' && t.id) return SERVICE_URL + '/icon?id=' + encodeURIComponent(t.id);
+    if (t.type === 'tvapp' && t.id) return SERVICE_URL + '/icon?id=' + encodeURIComponent(t.id) + '&v=' + BOOT;
     return null;
+  }
+
+  // Color medio del borde del logo, si es liso. Con ese color se rellena la tarjeta
+  // y el logo ocupa todo el alto sin estirarse ni recortarse.
+  function edgeColor(img) {
+    try {
+      var n = 24;
+      var cv = document.createElement('canvas');
+      cv.width = n; cv.height = n;
+      var ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0, n, n);
+      var d = ctx.getImageData(0, 0, n, n).data;
+      var px = [];
+      for (var i = 0; i < n; i++) {
+        [[i, 0], [i, n - 1], [0, i], [n - 1, i]].forEach(function (p) {
+          var k = (p[1] * n + p[0]) * 4;
+          px.push([d[k], d[k + 1], d[k + 2], d[k + 3]]);
+        });
+      }
+      var avg = [0, 0, 0, 0];
+      px.forEach(function (p) { for (var j = 0; j < 4; j++) avg[j] += p[j] / px.length; });
+      if (avg[3] < 230) return null; // borde transparente: el logo no tiene fondo propio
+      var dev = 0;
+      px.forEach(function (p) { dev += Math.abs(p[0] - avg[0]) + Math.abs(p[1] - avg[1]) + Math.abs(p[2] - avg[2]); });
+      if (dev / px.length > 40) return null; // borde con dibujo: mejor no rellenar
+      return 'rgb(' + Math.round(avg[0]) + ',' + Math.round(avg[1]) + ',' + Math.round(avg[2]) + ')';
+    } catch (e) { return null; }
   }
 
   function buildTile(t, r, c) {
@@ -281,13 +473,31 @@
     el.className = 'tile';
     el.style.background = t.color || '#2a3550';
     var url = iconUrl(t);
-    if (url) {
+    if (t.banner) {
+      // Imagen panorámica propia: cubre la tarjeta entera
+      el.style.backgroundImage = 'url("' + t.banner.replace(/"/g, '%22') + '")';
+      el.style.backgroundSize = 'cover';
+      el.style.backgroundPosition = 'center';
+      el.className += ' banner';
+    } else if (url) {
       var img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
+      // Las apps de la tele prueban primero una imagen panorámica de su carpeta
+      var tryBanner = !t.icon && t.type === 'tvapp';
+      img.onload = function () {
+        var color = edgeColor(img);
+        if (tryBanner) el.className += ' wide';
+        if (color) {
+          el.style.background = color;
+          el.className += ' logo-fill';
+        }
+      };
       img.onerror = function () {
+        if (tryBanner) { tryBanner = false; img.src = url; return; }
         if (img.parentNode) el.removeChild(img);
         el.className += ' noicon';
       };
-      img.src = url;
+      img.src = tryBanner ? url + '&kind=banner' : url;
       el.appendChild(img);
     } else el.className += ' noicon';
     var name = document.createElement('div');
@@ -340,7 +550,7 @@
 
   function setFocus(r, c) {
     if (!rowEls.length) return;
-    var prev = document.querySelectorAll('.focused, .active');
+    var prev = document.querySelectorAll('.tile.focused, .row.active');
     for (var i = 0; i < prev.length; i++) prev[i].className = prev[i].className.replace(/ (focused|active)/g, '');
     focusRow = r;
     focusCol[r] = c;
@@ -365,10 +575,12 @@
     if (!rowEls.length) return;
     if (dy) {
       var r = focusRow + dy;
-      if (r < 0 || r >= rowEls.length) return;
+      if (r < 0) return setZone('top');
+      if (r >= rowEls.length) return;
       setFocus(r, Math.min(focusCol[r] || 0, rowEls[r].tiles.length - 1));
     } else {
       var c = focusCol[focusRow] + dx;
+      if (c >= rowEls[focusRow].tiles.length && sideItems().length) return setZone('side');
       if (c < 0 || c >= rowEls[focusRow].tiles.length) return;
       setFocus(focusRow, c);
     }
@@ -488,38 +700,55 @@
     else if (ws) ws.addEventListener('open', send);
   }
 
-  // ---------- Lista de apps instaladas (amarillo) ----------
+  // ---------- Editar (amarillo): accesos del launcher y apps instaladas ----------
 
   function isOpen(id) { return $(id).className === 'panel open'; }
 
-  // Con OK sobre una app se elige en qué fila añadirla (o quitarla si ya está)
-  var appList = { apps: [], sel: 0, mode: 'list', choices: [], choiceSel: 0 };
+  // items: [{ head }, { tile, r, i }, { widget }, { app }]
+  var appList = { apps: [], items: [], sel: 0, mode: 'list', choices: [], choiceSel: 0 };
 
   function toggleAppList() {
     var panel = $('applist');
     if (isOpen('applist')) { panel.className = 'panel'; return; }
     closePanels();
     panel.className = 'panel open';
-    panel.textContent = 'Cargando apps instaladas…';
     appList.mode = 'list';
+    buildEditItems();
+    renderAppList();
     getJSON(SERVICE_URL + '/apps', function (err, data) {
-      if (err || !data.apps) {
-        panel.textContent = 'No se pudo obtener la lista (' + errText(err, data) + ')';
-        return;
-      }
-      appList.apps = data.apps;
-      appList.sel = Math.min(appList.sel, data.apps.length - 1);
-      renderAppList();
+      appList.error = err || !data.apps ? 'No se pudo obtener la lista de apps (' + errText(err, data) + ')' : '';
+      appList.apps = (data && data.apps) || [];
+      buildEditItems();
+      if (isOpen('applist')) renderAppList();
     });
   }
 
-  // Fila en la que ya está una app, o -1
-  function rowOfApp(id) {
+  function buildEditItems() {
+    var items = [{ head: 'En el launcher · OK para quitar o mover' }];
+    config.rows.forEach(function (row, r) {
+      (row.tiles || []).forEach(function (t, i) { items.push({ tile: t, r: r, i: i }); });
+    });
+    items.push({ head: 'Widgets · OK o ←→ para cambiar' });
+    widgetItems().forEach(function (w) { items.push({ widget: w }); });
+    items.push({ head: appList.error || (appList.apps.length ? 'Apps instaladas (' + appList.apps.length + ') · OK para añadir' : 'Cargando apps instaladas…') });
+    appList.apps.forEach(function (a) { items.push({ app: a }); });
+    appList.items = items;
+    if (appList.sel >= items.length || !selectable(appList.sel)) appList.sel = nextSelectable(-1, 1);
+  }
+
+  function selectable(i) { return appList.items[i] && !appList.items[i].head; }
+  function nextSelectable(from, dir) {
+    for (var i = from + dir; i >= 0 && i < appList.items.length; i += dir) if (selectable(i)) return i;
+    return from < 0 ? 0 : from;
+  }
+
+  // Dónde está ya una app de la tele: { r, i } o null
+  function findTvApp(id) {
     for (var r = 0; r < config.rows.length; r++) {
       var tiles = config.rows[r].tiles || [];
-      for (var i = 0; i < tiles.length; i++) if (tiles[i].type === 'tvapp' && tiles[i].id === id) return r;
+      for (var i = 0; i < tiles.length; i++) if (tiles[i].type === 'tvapp' && tiles[i].id === id) return { r: r, i: i };
     }
-    return -1;
+    return null;
   }
 
   function line(text, className) {
@@ -529,25 +758,91 @@
     return el;
   }
 
+  function listIcon(src, color) {
+    var box = document.createElement('span');
+    box.className = 'ico';
+    box.style.background = color || '#262a33';
+    // El icono se carga solo cuando la línea está cerca de la vista (ver loadVisibleIcons)
+    if (src) box.setAttribute('data-src', src);
+    return box;
+  }
+
+  function loadVisibleIcons() {
+    var panel = $('applist');
+    var top = panel.scrollTop - 300, bottom = panel.scrollTop + panel.clientHeight + 600;
+    var boxes = panel.querySelectorAll('.ico[data-src]');
+    for (var i = 0; i < boxes.length; i++) {
+      var row = boxes[i].parentNode;
+      if (row.offsetTop < top || row.offsetTop > bottom) continue;
+      var img = document.createElement('img');
+      img.onerror = function () { if (this.parentNode) this.parentNode.removeChild(this); };
+      img.src = boxes[i].getAttribute('data-src');
+      boxes[i].removeAttribute('data-src');
+      boxes[i].appendChild(img);
+    }
+  }
+
+  // Al moverse solo cambia la línea marcada: redibujar toda la lista en cada pulsación
+  // (con cientos de iconos) bloqueaba la tele
+  function moveListSel(i) {
+    var panel = $('applist');
+    var old = panel.querySelector('.app.sel');
+    if (old) old.className = old.className.replace(' sel', '');
+    appList.sel = i;
+    var el = appList.els && appList.els[i];
+    if (!el) return;
+    el.className += ' sel';
+    scrollToSel(el);
+    loadVisibleIcons();
+  }
+
+  function scrollToSel(selEl) {
+    var panel = $('applist');
+    if (selEl.offsetTop < panel.scrollTop + 80) panel.scrollTop = selEl.offsetTop - 80;
+    else if (selEl.offsetTop + selEl.offsetHeight > panel.scrollTop + panel.clientHeight - 20) {
+      panel.scrollTop = selEl.offsetTop + selEl.offsetHeight - panel.clientHeight + 20;
+    }
+  }
+
   function renderAppList() {
     var panel = $('applist');
     panel.innerHTML = '';
     var selEl = null;
+    appList.els = [];
     if (appList.mode === 'list') {
-      panel.appendChild(line(appList.apps.length + ' apps · OK para añadir a una fila · Volver para cerrar', 'head'));
-      appList.apps.forEach(function (a, i) {
-        var r = rowOfApp(a.id);
-        var el = line(a.name + (r >= 0 ? '  ✓ ' + (config.rows[r].title || '') : ''), 'app' + (i === appList.sel ? ' sel' : ''));
-        var id = document.createElement('span');
-        id.className = 'id';
-        id.textContent = a.id;
-        el.appendChild(id);
+      panel.appendChild(line('Editar', 'title'));
+      appList.items.forEach(function (it, i) {
+        if (it.head) return panel.appendChild(line(it.head, 'head'));
+        var el = document.createElement('div');
+        el.className = 'app' + (i === appList.sel ? ' sel' : '');
+        var name = document.createElement('span');
+        name.className = 'nm';
+        var sub = document.createElement('span');
+        sub.className = 'id';
+        if (it.widget) {
+          el.className += ' opt';
+          name.textContent = it.widget.label;
+          var cur = it.widget.list[findIndex(it.widget.list, it.widget.get())];
+          sub.className = 'val';
+          sub.textContent = cur ? cur.name : '—';
+        } else if (it.tile) {
+          el.appendChild(listIcon(iconUrl(it.tile), it.tile.color));
+          name.textContent = it.tile.name || it.tile.id;
+          sub.textContent = (config.rows[it.r].title || '') + (it.tile.type === 'module' ? ' · TizenBrew' : it.tile.type === 'url' ? ' · Web' : '');
+        } else {
+          el.appendChild(listIcon(SERVICE_URL + '/icon?id=' + encodeURIComponent(it.app.id) + '&v=' + BOOT));
+          var at = findTvApp(it.app.id);
+          name.textContent = it.app.name;
+          sub.textContent = at ? '✓ ' + (config.rows[at.r].title || '') : it.app.id;
+        }
+        el.appendChild(name);
+        el.appendChild(sub);
         panel.appendChild(el);
+        appList.els[i] = el;
         if (i === appList.sel) selEl = el;
       });
     } else {
-      var app = appList.apps[appList.sel];
-      panel.appendChild(line(app.name + ' · ¿dónde la pongo?', 'head'));
+      panel.appendChild(line(appList.choiceTitle, 'title'));
       appList.choices.forEach(function (c, i) {
         var el = line(c.label, 'app' + (i === appList.choiceSel ? ' sel' : ''));
         panel.appendChild(el);
@@ -556,24 +851,32 @@
       panel.appendChild(line('Volver para cancelar', 'head'));
     }
     // Mantener visible la línea seleccionada
-    if (selEl) {
-      if (selEl.offsetTop < panel.scrollTop + 60) panel.scrollTop = selEl.offsetTop - 60;
-      else if (selEl.offsetTop + selEl.offsetHeight > panel.scrollTop + panel.clientHeight - 20) {
-        panel.scrollTop = selEl.offsetTop + selEl.offsetHeight - panel.clientHeight + 20;
-      }
-    }
+    if (selEl) scrollToSel(selEl);
+    loadVisibleIcons();
+  }
+
+  function changeWidget(it, dir) {
+    cycleOption(it.widget, dir);
+    saveConfig();
+    buildEditItems();
+    renderAppList();
   }
 
   function openRowChooser() {
-    var app = appList.apps[appList.sel];
-    if (!app) return;
-    var current = rowOfApp(app.id);
+    var it = appList.items[appList.sel];
+    if (!it || it.head) return;
+    if (it.widget) return changeWidget(it, 1);
+    var at = it.tile ? { r: it.r, i: it.i } : findTvApp(it.app.id);
     var choices = [];
-    if (current >= 0) choices.push({ label: 'Quitar de «' + (config.rows[current].title || '') + '»', remove: current });
+    if (at) choices.push({ label: 'Quitar del launcher', remove: true });
     config.rows.forEach(function (row, r) {
-      if (r !== current) choices.push({ label: (current >= 0 ? 'Mover a «' : 'Añadir a «') + (row.title || '') + '»', row: r });
+      if (!at || r !== at.r) choices.push({ label: (at ? 'Mover a «' : 'Añadir a «') + (row.title || '') + '»', row: r });
     });
+    if (at && at.i > 0) choices.push({ label: 'Mover a la izquierda', shift: -1 });
+    if (at && at.i < config.rows[at.r].tiles.length - 1) choices.push({ label: 'Mover a la derecha', shift: 1 });
     choices.push({ label: 'Nueva fila «Mis apps»', row: -1 });
+    appList.choiceTitle = (it.tile ? it.tile.name : it.app.name) + (at ? ' · ¿qué hago?' : ' · ¿dónde la pongo?');
+    appList.target = { at: at, app: it.app };
     appList.choices = choices;
     appList.choiceSel = 0;
     appList.mode = 'rows';
@@ -581,46 +884,53 @@
   }
 
   function applyRowChoice() {
-    var app = appList.apps[appList.sel];
+    var target = appList.target;
     var choice = appList.choices[appList.choiceSel];
-    var current = rowOfApp(app.id);
+    var at = target.at;
     var tile = null;
-    if (current >= 0) {
-      var tiles = config.rows[current].tiles;
-      for (var i = 0; i < tiles.length; i++) {
-        if (tiles[i].type === 'tvapp' && tiles[i].id === app.id) { tile = tiles.splice(i, 1)[0]; break; }
-      }
-    }
-    if (choice.remove !== undefined) {
-      setStatus(app.name + ' quitada');
+    if (choice.shift) {
+      var list = config.rows[at.r].tiles;
+      var j = at.i + choice.shift;
+      var moved = list[at.i]; list[at.i] = list[j]; list[j] = moved;
+      setStatus((moved.name || '') + ' movida');
     } else {
-      var r = choice.row;
-      if (r < 0) {
-        config.rows.push({ title: 'Mis apps', tiles: [] });
-        r = config.rows.length - 1;
+      if (at) tile = config.rows[at.r].tiles.splice(at.i, 1)[0];
+      var name = tile ? tile.name : target.app.name;
+      if (choice.remove) {
+        setStatus(name + ' quitada del launcher');
+      } else {
+        var r = choice.row;
+        if (r < 0) {
+          config.rows.push({ title: 'Mis apps', tiles: [] });
+          r = config.rows.length - 1;
+        }
+        // Fondo oscuro neutro: el logo de la app ya da el color
+        config.rows[r].tiles.push(tile || { name: target.app.name, type: 'tvapp', id: target.app.id, color: '#1c1f26' });
+        setStatus(name + (at ? ' movida a «' : ' añadida a «') + config.rows[r].title + '»');
       }
-      // Fondo oscuro neutro: el logo de la app ya da el color
-      config.rows[r].tiles.push(tile || { name: app.name, type: 'tvapp', id: app.id, color: '#1c1f26' });
-      setStatus(app.name + ' añadida a «' + config.rows[r].title + '»');
     }
     // Las filas que se quedan vacías desaparecen
     config.rows = config.rows.filter(function (row) { return row.tiles && row.tiles.length; });
     saveConfig();
     renderRows();
     appList.mode = 'list';
+    buildEditItems();
+    if (!selectable(appList.sel)) appList.sel = nextSelectable(appList.sel, -1);
     renderAppList();
   }
 
   function appListKey(code) {
     if (appList.mode === 'list') {
-      if (!appList.apps.length) return;
       if (code === KEY.UP || code === KEY.DOWN) {
-        appList.sel = Math.max(0, Math.min(appList.apps.length - 1, appList.sel + (code === KEY.DOWN ? 1 : -1)));
+        return moveListSel(nextSelectable(appList.sel, code === KEY.DOWN ? 1 : -1));
+      } else if ((code === KEY.LEFT || code === KEY.RIGHT) && appList.items[appList.sel].widget) {
+        return changeWidget(appList.items[appList.sel], code === KEY.RIGHT ? 1 : -1);
       } else if (code === KEY.LEFT || code === KEY.RIGHT) {
         // Saltar de 10 en 10 para listas largas
-        appList.sel = Math.max(0, Math.min(appList.apps.length - 1, appList.sel + (code === KEY.RIGHT ? 10 : -10)));
+        var to = appList.sel;
+        for (var k = 0; k < 10; k++) to = nextSelectable(to, code === KEY.RIGHT ? 1 : -1);
+        return moveListSel(to);
       } else if (code === KEY.ENTER) return openRowChooser();
-      renderAppList();
     } else {
       if (code === KEY.UP || code === KEY.DOWN) {
         appList.choiceSel = Math.max(0, Math.min(appList.choices.length - 1, appList.choiceSel + (code === KEY.DOWN ? 1 : -1)));
@@ -638,6 +948,51 @@
     return 0;
   }
 
+  // Opciones de los widgets, compartidas por Ajustes y Editar
+  function newsItem() {
+    var n = config.widgets.news || {};
+    var list = NEWS.slice();
+    if (n.url && !list.some(function (o) { return o.value === n.url; })) list.unshift({ name: n.title || 'Personalizada', value: n.url });
+    return {
+      label: 'Noticias', list: list,
+      get: function () { return n.url || ''; },
+      set: function (v) {
+        var src = list[findIndex(list, v)];
+        config.widgets.news = v ? { title: src.name, url: v } : null;
+      },
+      after: function () { newsItems = []; loadNews(); }
+    };
+  }
+
+  function widgetItems() {
+    var items = [
+      { label: 'Previsión del tiempo', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
+        get: function () { return !!config.widgets.forecast; },
+        set: function (v) { config.widgets.forecast = v; },
+        after: function () { if (config.widgets.forecast) loadWeather(); else $('w-forecast').className = 'widget hidden'; } },
+      newsItem()
+    ];
+    items.push({ label: 'Spotify', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
+      get: function () { return config.widgets.spotify !== false; },
+      set: function (v) { config.widgets.spotify = v; },
+      after: function () { loadSpotify(); } });
+    var ha = config.widgets.homeassistant;
+    if (ha && ha.url && ha.token) {
+      items.push({ label: 'Casa (Home Assistant)', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
+        get: function () { return ha.enabled !== false; },
+        set: function (v) { ha.enabled = v; },
+        after: function () { loadHomeAssistant(); } });
+    }
+    return items;
+  }
+
+  function cycleOption(it, dir) {
+    var i = findIndex(it.list, it.get());
+    i = ((i < 0 ? 0 : i + dir) + it.list.length) % it.list.length;
+    it.set(it.list[i].value);
+    if (it.after) it.after();
+  }
+
   function settingsItems() {
     var t = config.theme;
     var info;
@@ -652,6 +1007,7 @@
       { label: 'Tipografía', list: FONTS, get: function () { return t.font || 'sans'; }, set: function (v) { t.font = v; } },
       { label: 'Animaciones', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
         get: function () { return t.anim !== false; }, set: function (v) { t.anim = v; } },
+      newsItem(),
       { label: 'Modo reposo OLED', list: SAVER, get: function () { return config.screensaver.minutes; }, set: function (v) { config.screensaver.minutes = v; } },
       { label: 'Abrir al iniciar TizenBrew', list: [{ name: 'No', value: false }, { name: 'Sí', value: true }],
         get: function () { return !!config.autolaunch; }, set: function (v) { config.autolaunch = v; setAutolaunch(v); } },
@@ -661,19 +1017,40 @@
 
   function renderSettings() {
     var panel = $('settings');
-    panel.innerHTML = '<h2>Ajustes</h2>';
+    panel.innerHTML = '<h2>Ajustes</h2><div class="cols"><div class="list"></div></div>';
+    var list = panel.querySelector('.list');
     settingsItems().forEach(function (it, i) {
       var row = document.createElement('div');
       row.className = 'item' + (it.info ? ' info' : '') + (i === settingsSel ? ' sel' : '');
       row.innerHTML = '<span></span><span class="val"></span>';
       row.children[0].textContent = it.label;
       row.children[1].textContent = it.info || it.list[findIndex(it.list, it.get())].name;
-      panel.appendChild(row);
+      list.appendChild(row);
     });
     var hint = document.createElement('div');
     hint.className = 'hint';
-    hint.textContent = '↑↓ elegir · ←→ cambiar · Volver para cerrar. Para editar los accesos, abre la dirección de arriba en el navegador del móvil con la tele y el móvil en la misma wifi.';
-    panel.appendChild(hint);
+    hint.textContent = '↑↓ elegir · ←→ cambiar · Volver para cerrar. Para editar desde el móvil, escanea el código QR o abre la dirección de arriba, con la tele y el móvil en la misma wifi.';
+    list.appendChild(hint);
+    var qr = editorQr();
+    if (qr) panel.querySelector('.cols').appendChild(qr);
+  }
+
+  // Código QR con la dirección del editor y el PIN: al escanearlo, el móvil entra sin escribir nada
+  function editorQr() {
+    if (!serviceInfo || serviceInfo.error || !serviceInfo.ip || !window.qrcode) return null;
+    var link = 'http://' + serviceInfo.ip + ':' + serviceInfo.port + '/editor?pin=' + serviceInfo.pin;
+    try {
+      var q = qrcode(0, 'M');
+      q.addData(link);
+      q.make();
+      var box = document.createElement('div');
+      box.className = 'qr';
+      var img = document.createElement('img');
+      img.src = q.createDataURL(8, 2);
+      box.appendChild(img);
+      box.appendChild(line('Escanéalo con el móvil', 'qr-cap'));
+      return box;
+    } catch (e) { return null; }
   }
 
   function toggleSettings() {
@@ -714,9 +1091,7 @@
     } else if (code === KEY.LEFT || code === KEY.RIGHT) {
       var it = items[settingsSel];
       if (it.info) return;
-      var i = findIndex(it.list, it.get()) + (code === KEY.RIGHT ? 1 : -1);
-      i = (i + it.list.length) % it.list.length;
-      it.set(it.list[i].value);
+      cycleOption(it, code === KEY.RIGHT ? 1 : -1);
       applyTheme();
       renderRows();
       saveConfig();
@@ -727,6 +1102,244 @@
   function closePanels() {
     $('applist').className = 'panel';
     $('settings').className = 'panel';
+    $('weatherPanel').className = 'panel';
+    $('newsPanel').className = 'panel';
+  }
+
+  // ---------- Menú de arriba y columna de widgets ----------
+
+  var TOP_ITEMS = [
+    { id: 'm-apps', action: function () { toggleAppList(); } },
+    { id: 'm-settings', action: function () { toggleSettings(); } },
+    { id: 'm-reload', action: function () { location.reload(); } },
+    { id: 'weather', action: function () { openWeather(); } }
+  ];
+
+  function clearSel() {
+    var prev = document.querySelectorAll('.nav-sel');
+    for (var i = 0; i < prev.length; i++) prev[i].className = prev[i].className.replace(/ ?nav-sel/g, '');
+  }
+
+  function setZone(z) {
+    zone = z;
+    clearSel();
+    var prev = document.querySelectorAll('.tile.focused, .row.active');
+    for (var i = 0; i < prev.length; i++) prev[i].className = prev[i].className.replace(/ (focused|active)/g, '');
+    if (z === 'rows') return setFocus(focusRow, focusCol[focusRow] || 0);
+    if (z === 'top') $(TOP_ITEMS[topSel].id).className += ' nav-sel';
+    if (z === 'side') showSideSel();
+  }
+
+  function topKey(code) {
+    if (code === KEY.DOWN) return setZone('rows');
+    if (code === KEY.ENTER) return TOP_ITEMS[topSel].action();
+    if (code === KEY.UP) return;
+    var i = topSel + (code === KEY.RIGHT ? 1 : -1);
+    if (i < 0 || i >= TOP_ITEMS.length) return;
+    topSel = i;
+    setZone('top');
+  }
+
+  // Elementos de la columna derecha que se pueden elegir con el mando
+  function sideItems() {
+    var items = [];
+    if ($('w-forecast').className.indexOf('hidden') === -1) items.push({ el: $('w-forecast'), action: openWeather });
+    if ($('w-spotify').className.indexOf('hidden') === -1) {
+      items.push({ el: $('w-spotify'), action: function () { spotifyControl(spotifyNow && spotifyNow.playing ? 'pause' : 'play'); } });
+    }
+    var has = $('w-ha').className.indexOf('hidden') === -1 ? document.querySelectorAll('#w-ha .ha-item') : [];
+    for (var h = 0; h < has.length; h++) items.push({ el: has[h], action: (function (id) { return function () { haAction(id); }; })(has[h].getAttribute('data-id')) });
+    var lis = $('w-news').className.indexOf('hidden') === -1 ? document.querySelectorAll('#w-news li') : [];
+    for (var i = 0; i < lis.length; i++) items.push({ el: lis[i], news: i, action: (function (n) { return function () { openNews(n); }; })(i) });
+    return items;
+  }
+
+  function buildSide() {
+    if (zone !== 'side') return;
+    var n = sideItems().length;
+    if (!n) return setZone('rows');
+    if (sideSel >= n) sideSel = n - 1;
+    showSideSel();
+  }
+
+  function showSideSel() {
+    clearSel();
+    var items = sideItems();
+    var it = items[sideSel];
+    if (!it) return;
+    it.el.className += ' nav-sel';
+    // Desplaza la lista de noticias para que la elegida quede a la vista
+    var list = document.querySelector('#w-news .news');
+    if (list && it.news !== undefined) {
+      // .news tiene position: relative, así que offsetTop ya es relativo a la lista
+      var li = it.el;
+      if (li.offsetTop < list.scrollTop) list.scrollTop = li.offsetTop;
+      else if (li.offsetTop + li.offsetHeight > list.scrollTop + list.clientHeight) {
+        list.scrollTop = li.offsetTop + li.offsetHeight - list.clientHeight;
+      }
+    } else if (list && it.news === undefined) list.scrollTop = 0;
+  }
+
+  function sideKey(code) {
+    var items = sideItems();
+    if (code === KEY.LEFT) return setZone('rows');
+    if (code === KEY.ENTER) return items[sideSel] && items[sideSel].action();
+    if (code === KEY.RIGHT) {
+      if (items[sideSel] && items[sideSel].el.id === 'w-spotify') spotifyControl('next');
+      return;
+    }
+    var i = sideSel + (code === KEY.DOWN ? 1 : -1);
+    if (i < 0) return setZone('top');
+    if (i >= items.length) return;
+    sideSel = i;
+    showSideSel();
+  }
+
+  // ---------- Noticia completa ----------
+
+  var newsSel = 0;
+
+  function openNews(i) {
+    if (i < 0 || i >= newsItems.length) return;
+    newsSel = i;
+    var item = newsItems[i];
+    var panel = $('newsPanel');
+    closePanels();
+    panel.innerHTML = '';
+    var body = document.createElement('div');
+    body.id = 'newsBody';
+    if (item.image) {
+      var img = document.createElement('img');
+      img.src = item.image;
+      img.onerror = function () { if (img.parentNode) img.parentNode.removeChild(img); };
+      body.appendChild(img);
+    }
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = ((config.widgets.news && config.widgets.news.title) || 'Noticias') +
+      (item.date && !isNaN(item.date) ? ' · ' + item.date.toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '');
+    var h = document.createElement('h2');
+    h.textContent = item.title;
+    var p = document.createElement('p');
+    p.textContent = item.text || 'Esta noticia no trae resumen.';
+    body.appendChild(meta);
+    body.appendChild(h);
+    body.appendChild(p);
+    panel.appendChild(body);
+    var hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = (i + 1) + ' de ' + newsItems.length + ' · ←→ otra noticia · ↑↓ desplazar · Volver para cerrar';
+    panel.appendChild(hint);
+    panel.className = 'panel open';
+    // Lleva también la selección de la columna a esa noticia
+    var items = sideItems();
+    for (var k = 0; k < items.length; k++) if (items[k].news === i) sideSel = k;
+    if (zone === 'side') showSideSel();
+  }
+
+  // ---------- El tiempo, con más detalle ----------
+
+  function windDir(deg) {
+    return ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(deg / 45) % 8];
+  }
+
+  function openWeather() {
+    var w = config.weather;
+    if (!w) return setStatus('Elige una ciudad en el editor del móvil');
+    var panel = $('weatherPanel');
+    closePanels();
+    panel.innerHTML = '<h2></h2><p class="hint">Cargando…</p>';
+    panel.children[0].textContent = 'El tiempo en ' + w.city;
+    panel.className = 'panel open';
+    var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + w.latitude + '&longitude=' + w.longitude +
+      '&timezone=auto&forecast_days=7' +
+      '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,precipitation,pressure_msl,cloud_cover' +
+      '&hourly=temperature_2m,precipitation_probability,weather_code' +
+      '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max,wind_speed_10m_max';
+    getJSON(url, function (err, d) {
+      if (!isOpen('weatherPanel')) return;
+      if (err || !d || !d.current) { panel.children[1].textContent = 'No se pudo cargar el tiempo'; return; }
+      renderWeatherPanel(panel, w, d);
+    });
+  }
+
+  function cell(parent, cls, text) {
+    var c = document.createElement('div');
+    c.className = cls;
+    c.textContent = text;
+    parent.appendChild(c);
+    return c;
+  }
+
+  function renderWeatherPanel(panel, w, d) {
+    var c = d.current, day = d.daily;
+    panel.innerHTML = '';
+    var top = document.createElement('div');
+    top.className = 'wx-now';
+    var left = document.createElement('div');
+    cell(left, 'wx-city', w.city);
+    cell(left, 'wx-temp', Math.round(c.temperature_2m) + '°');
+    cell(left, 'wx-desc', (WEATHER_CODES[c.weather_code] || '') + ' · Máx. ' + Math.round(day.temperature_2m_max[0]) + '° Mín. ' + Math.round(day.temperature_2m_min[0]) + '°');
+    top.appendChild(left);
+    var facts = document.createElement('div');
+    facts.className = 'wx-facts';
+    [
+      ['Sensación', Math.round(c.apparent_temperature) + '°'],
+      ['Humedad', Math.round(c.relative_humidity_2m) + ' %'],
+      ['Viento', Math.round(c.wind_speed_10m) + ' km/h ' + windDir(c.wind_direction_10m)],
+      ['Lluvia hoy', (day.precipitation_sum[0] || 0).toFixed(1) + ' mm · ' + (day.precipitation_probability_max[0] || 0) + ' %'],
+      ['Índice UV', Math.round(day.uv_index_max[0] || 0)],
+      ['Nubes', Math.round(c.cloud_cover) + ' %'],
+      ['Presión', Math.round(c.pressure_msl) + ' hPa'],
+      ['Sol', day.sunrise[0].slice(11, 16) + ' – ' + day.sunset[0].slice(11, 16)]
+    ].forEach(function (f) {
+      var box = document.createElement('div');
+      cell(box, 'k', f[0]);
+      cell(box, 'v', '' + f[1]);
+      facts.appendChild(box);
+    });
+    top.appendChild(facts);
+    panel.appendChild(top);
+
+    // Próximas 24 horas, desde la hora actual
+    cell(panel, 'wx-h', 'Próximas horas');
+    var hours = document.createElement('div');
+    hours.className = 'wx-hours';
+    var now = c.time.slice(0, 13);
+    var start = 0;
+    for (var i = 0; i < d.hourly.time.length; i++) if (d.hourly.time[i].slice(0, 13) === now) { start = i; break; }
+    for (var j = start; j < start + 24 && j < d.hourly.time.length; j += 2) {
+      var h = document.createElement('div');
+      cell(h, 'k', j === start ? 'Ahora' : d.hourly.time[j].slice(11, 16));
+      cell(h, 'v', Math.round(d.hourly.temperature_2m[j]) + '°');
+      cell(h, 's', (WEATHER_CODES[d.hourly.weather_code[j]] || '').replace('Parcialmente nuboso', 'Nubes y claros'));
+      cell(h, 'p', (d.hourly.precipitation_probability[j] || 0) + ' %');
+      hours.appendChild(h);
+    }
+    panel.appendChild(hours);
+
+    // Siete días con barra de temperaturas
+    cell(panel, 'wx-h', 'Próximos 7 días');
+    var days = document.createElement('div');
+    days.className = 'wx-days';
+    var lo = Math.min.apply(null, day.temperature_2m_min), hi = Math.max.apply(null, day.temperature_2m_max);
+    for (var k = 0; k < day.time.length; k++) {
+      var row = document.createElement('div');
+      var name = k === 0 ? 'Hoy' : new Date(day.time[k] + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long' });
+      cell(row, 'd', name.charAt(0).toUpperCase() + name.slice(1));
+      cell(row, 's', WEATHER_CODES[day.weather_code[k]] || '');
+      cell(row, 'p', (day.precipitation_probability_max[k] || 0) + ' %');
+      cell(row, 'lo', Math.round(day.temperature_2m_min[k]) + '°');
+      var bar = cell(row, 'bar', '');
+      var fill = cell(bar, 'fill', '');
+      var span = Math.max(1, hi - lo);
+      fill.style.left = ((day.temperature_2m_min[k] - lo) / span * 100) + '%';
+      fill.style.width = Math.max(4, (day.temperature_2m_max[k] - day.temperature_2m_min[k]) / span * 100) + '%';
+      cell(row, 'hi', Math.round(day.temperature_2m_max[k]) + '°');
+      days.appendChild(row);
+    }
+    panel.appendChild(days);
+    cell(panel, 'hint', 'Datos de Open-Meteo · Volver para cerrar');
   }
 
   // ---------- Modo reposo OLED ----------
@@ -747,6 +1360,7 @@
   }
 
   function startSaver() {
+    if ($('viewer').className === 'on') return resetIdle();
     closePanels();
     $('saver').className = 'on';
     placeSaverClock($('saverClock'));
@@ -771,6 +1385,7 @@
     if (!config) return;
     resetIdle();
     if ($('saver').className === 'on') { stopSaver(); e.preventDefault(); return; }
+    if ($('viewer').className === 'on') { viewerKey(code); e.preventDefault(); return; }
 
     if (code === KEY.BACK && isOpen('applist') && appList.mode === 'rows') {
       appList.mode = 'list';
@@ -778,7 +1393,7 @@
       e.preventDefault();
       return;
     }
-    if (code === KEY.BACK && (isOpen('applist') || isOpen('settings'))) {
+    if (code === KEY.BACK && (isOpen('applist') || isOpen('settings') || isOpen('weatherPanel') || isOpen('newsPanel'))) {
       closePanels();
       e.preventDefault();
       return;
@@ -790,6 +1405,23 @@
     }
     if (isOpen('applist') && code !== KEY.YELLOW) {
       appListKey(code);
+      e.preventDefault();
+      return;
+    }
+    if (isOpen('newsPanel')) {
+      if (code === KEY.UP || code === KEY.DOWN) $('newsBody').scrollTop += code === KEY.DOWN ? 160 : -160;
+      if (code === KEY.LEFT || code === KEY.RIGHT) openNews(newsSel + (code === KEY.RIGHT ? 1 : -1));
+      if (code === KEY.ENTER) closePanels();
+      e.preventDefault();
+      return;
+    }
+    if (isOpen('weatherPanel')) {
+      if (code === KEY.ENTER) closePanels();
+      e.preventDefault();
+      return;
+    }
+    if (zone !== 'rows' && (code === KEY.LEFT || code === KEY.RIGHT || code === KEY.UP || code === KEY.DOWN || code === KEY.ENTER)) {
+      if (zone === 'top') topKey(code); else sideKey(code);
       e.preventDefault();
       return;
     }
@@ -862,12 +1494,14 @@
     setInterval(tickClock, 10000);
     loadWeather();
     setInterval(loadWeather, 30 * 60 * 1000);
-    renderCalendar();
-    setInterval(renderCalendar, 60 * 60 * 1000);
     loadNews();
     setInterval(loadNews, 30 * 60 * 1000);
     loadHomeAssistant();
     setInterval(loadHomeAssistant, 60 * 1000);
+    loadSpotify();
+    setInterval(function () { if ($('saver').className !== 'on') loadSpotify(); }, 5000);
+    checkInbox();
+    setInterval(checkInbox, 2000);
     connectTizenBrew();
     watchConfig();
     resetIdle();

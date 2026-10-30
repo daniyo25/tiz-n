@@ -19,7 +19,6 @@
   "autolaunch": false,
   "widgets": {
     "forecast": true,
-    "calendar": true,
     "news": {
       "title": "El País",
       "url": "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada"
