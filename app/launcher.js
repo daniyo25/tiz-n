@@ -13,7 +13,7 @@
   };
   var TB_WS_URL = 'ws://127.0.0.1:8081';
   var SERVICE_URL = 'http://127.0.0.1:8091';
-  var SERVICE_VERSION = 4; // la que trae service/service.js en esta versión
+  var SERVICE_VERSION = 5; // la que trae service/service.js en esta versión
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, Error: 8, ModuleAction: 10 };
 
   var WEATHER_CODES = {
@@ -30,6 +30,16 @@
   var SIZES = [{ name: 'Pequeño', value: 's' }, { name: 'Normal', value: 'm' }, { name: 'Grande', value: 'l' }];
   var FONTS = [{ name: 'Samsung', value: 'sans' }, { name: 'Serif', value: 'serif' }, { name: 'Máquina de escribir', value: 'mono' }];
   var STYLES = [{ name: 'Apple TV', value: 'tvos' }, { name: 'Clásico', value: 'classic' }];
+  var NEWS = [
+    { name: 'El País', value: 'https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada' },
+    { name: 'El Mundo', value: 'https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml' },
+    { name: 'elDiario.es', value: 'https://www.eldiario.es/rss/' },
+    { name: '20minutos', value: 'https://www.20minutos.es/rss/' },
+    { name: 'BBC Mundo', value: 'https://feeds.bbci.co.uk/mundo/rss.xml' },
+    { name: 'Marca', value: 'https://e00-marca.uecdn.es/rss/portada.xml' },
+    { name: 'Xataka', value: 'https://www.xataka.com/feedburner.xml' },
+    { name: 'Ninguna', value: '' }
+  ];
   var SAVER = [{ name: 'Nunca', value: 0 }, { name: '2 min', value: 2 }, { name: '5 min', value: 5 }, { name: '10 min', value: 10 }, { name: '30 min', value: 30 }];
 
   var config = null;
@@ -260,7 +270,7 @@
 
   function loadHomeAssistant() {
     var ha = config.widgets.homeassistant;
-    if (!ha || !ha.url || !ha.token || !ha.entities || !ha.entities.length) {
+    if (!ha || ha.enabled === false || !ha.url || !ha.token || !ha.entities || !ha.entities.length) {
       $('w-ha').className = 'widget hidden';
       return;
     }
@@ -297,13 +307,54 @@
     return null;
   }
 
+  // Color medio del borde del logo, si es liso. Con ese color se rellena la tarjeta
+  // y el logo ocupa todo el alto sin estirarse ni recortarse.
+  function edgeColor(img) {
+    try {
+      var n = 24;
+      var cv = document.createElement('canvas');
+      cv.width = n; cv.height = n;
+      var ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0, n, n);
+      var d = ctx.getImageData(0, 0, n, n).data;
+      var px = [];
+      for (var i = 0; i < n; i++) {
+        [[i, 0], [i, n - 1], [0, i], [n - 1, i]].forEach(function (p) {
+          var k = (p[1] * n + p[0]) * 4;
+          px.push([d[k], d[k + 1], d[k + 2], d[k + 3]]);
+        });
+      }
+      var avg = [0, 0, 0, 0];
+      px.forEach(function (p) { for (var j = 0; j < 4; j++) avg[j] += p[j] / px.length; });
+      if (avg[3] < 230) return null; // borde transparente: el logo no tiene fondo propio
+      var dev = 0;
+      px.forEach(function (p) { dev += Math.abs(p[0] - avg[0]) + Math.abs(p[1] - avg[1]) + Math.abs(p[2] - avg[2]); });
+      if (dev / px.length > 40) return null; // borde con dibujo: mejor no rellenar
+      return 'rgb(' + Math.round(avg[0]) + ',' + Math.round(avg[1]) + ',' + Math.round(avg[2]) + ')';
+    } catch (e) { return null; }
+  }
+
   function buildTile(t, r, c) {
     var el = document.createElement('div');
     el.className = 'tile';
     el.style.background = t.color || '#2a3550';
     var url = iconUrl(t);
-    if (url) {
+    if (t.banner) {
+      // Imagen panorámica propia: cubre la tarjeta entera
+      el.style.backgroundImage = 'url("' + t.banner.replace(/"/g, '%22') + '")';
+      el.style.backgroundSize = 'cover';
+      el.style.backgroundPosition = 'center';
+      el.className += ' banner';
+    } else if (url) {
       var img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        var color = edgeColor(img);
+        if (color) {
+          el.style.background = color;
+          el.className += ' logo-fill';
+        }
+      };
       img.onerror = function () {
         if (img.parentNode) el.removeChild(img);
         el.className += ' noicon';
@@ -511,38 +562,55 @@
     else if (ws) ws.addEventListener('open', send);
   }
 
-  // ---------- Lista de apps instaladas (amarillo) ----------
+  // ---------- Editar (amarillo): accesos del launcher y apps instaladas ----------
 
   function isOpen(id) { return $(id).className === 'panel open'; }
 
-  // Con OK sobre una app se elige en qué fila añadirla (o quitarla si ya está)
-  var appList = { apps: [], sel: 0, mode: 'list', choices: [], choiceSel: 0 };
+  // items: [{ head }, { tile, r, i }, { widget }, { app }]
+  var appList = { apps: [], items: [], sel: 0, mode: 'list', choices: [], choiceSel: 0 };
 
   function toggleAppList() {
     var panel = $('applist');
     if (isOpen('applist')) { panel.className = 'panel'; return; }
     closePanels();
     panel.className = 'panel open';
-    panel.textContent = 'Cargando apps instaladas…';
     appList.mode = 'list';
+    buildEditItems();
+    renderAppList();
     getJSON(SERVICE_URL + '/apps', function (err, data) {
-      if (err || !data.apps) {
-        panel.textContent = 'No se pudo obtener la lista (' + errText(err, data) + ')';
-        return;
-      }
-      appList.apps = data.apps;
-      appList.sel = Math.min(appList.sel, data.apps.length - 1);
-      renderAppList();
+      appList.error = err || !data.apps ? 'No se pudo obtener la lista de apps (' + errText(err, data) + ')' : '';
+      appList.apps = (data && data.apps) || [];
+      buildEditItems();
+      if (isOpen('applist')) renderAppList();
     });
   }
 
-  // Fila en la que ya está una app, o -1
-  function rowOfApp(id) {
+  function buildEditItems() {
+    var items = [{ head: 'En el launcher · OK para quitar o mover' }];
+    config.rows.forEach(function (row, r) {
+      (row.tiles || []).forEach(function (t, i) { items.push({ tile: t, r: r, i: i }); });
+    });
+    items.push({ head: 'Widgets · OK o ←→ para cambiar' });
+    widgetItems().forEach(function (w) { items.push({ widget: w }); });
+    items.push({ head: appList.error || (appList.apps.length ? 'Apps instaladas (' + appList.apps.length + ') · OK para añadir' : 'Cargando apps instaladas…') });
+    appList.apps.forEach(function (a) { items.push({ app: a }); });
+    appList.items = items;
+    if (appList.sel >= items.length || !selectable(appList.sel)) appList.sel = nextSelectable(-1, 1);
+  }
+
+  function selectable(i) { return appList.items[i] && !appList.items[i].head; }
+  function nextSelectable(from, dir) {
+    for (var i = from + dir; i >= 0 && i < appList.items.length; i += dir) if (selectable(i)) return i;
+    return from < 0 ? 0 : from;
+  }
+
+  // Dónde está ya una app de la tele: { r, i } o null
+  function findTvApp(id) {
     for (var r = 0; r < config.rows.length; r++) {
       var tiles = config.rows[r].tiles || [];
-      for (var i = 0; i < tiles.length; i++) if (tiles[i].type === 'tvapp' && tiles[i].id === id) return r;
+      for (var i = 0; i < tiles.length; i++) if (tiles[i].type === 'tvapp' && tiles[i].id === id) return { r: r, i: i };
     }
-    return -1;
+    return null;
   }
 
   function line(text, className) {
@@ -552,25 +620,56 @@
     return el;
   }
 
+  function listIcon(src, color) {
+    var box = document.createElement('span');
+    box.className = 'ico';
+    box.style.background = color || '#262a33';
+    if (src) {
+      var img = document.createElement('img');
+      img.onerror = function () { if (img.parentNode) box.removeChild(img); };
+      img.src = src;
+      box.appendChild(img);
+    }
+    return box;
+  }
+
   function renderAppList() {
     var panel = $('applist');
     panel.innerHTML = '';
     var selEl = null;
     if (appList.mode === 'list') {
-      panel.appendChild(line(appList.apps.length + ' apps · OK para añadir a una fila · Volver para cerrar', 'head'));
-      appList.apps.forEach(function (a, i) {
-        var r = rowOfApp(a.id);
-        var el = line(a.name + (r >= 0 ? '  ✓ ' + (config.rows[r].title || '') : ''), 'app' + (i === appList.sel ? ' sel' : ''));
-        var id = document.createElement('span');
-        id.className = 'id';
-        id.textContent = a.id;
-        el.appendChild(id);
+      panel.appendChild(line('Editar', 'title'));
+      appList.items.forEach(function (it, i) {
+        if (it.head) return panel.appendChild(line(it.head, 'head'));
+        var el = document.createElement('div');
+        el.className = 'app' + (i === appList.sel ? ' sel' : '');
+        var name = document.createElement('span');
+        name.className = 'nm';
+        var sub = document.createElement('span');
+        sub.className = 'id';
+        if (it.widget) {
+          el.className += ' opt';
+          name.textContent = it.widget.label;
+          var cur = it.widget.list[findIndex(it.widget.list, it.widget.get())];
+          sub.className = 'val';
+          sub.textContent = cur ? cur.name : '—';
+        } else if (it.tile) {
+          el.appendChild(listIcon(iconUrl(it.tile), it.tile.color));
+          name.textContent = it.tile.name || it.tile.id;
+          sub.textContent = (config.rows[it.r].title || '') + (it.tile.type === 'module' ? ' · TizenBrew' : it.tile.type === 'url' ? ' · Web' : '');
+        } else {
+          el.appendChild(listIcon(SERVICE_URL + '/icon?id=' + encodeURIComponent(it.app.id) + '&v=' + BOOT));
+          var at = findTvApp(it.app.id);
+          name.textContent = it.app.name;
+          sub.textContent = at ? '✓ ' + (config.rows[at.r].title || '') : it.app.id;
+        }
+        el.appendChild(name);
+        el.appendChild(sub);
         panel.appendChild(el);
         if (i === appList.sel) selEl = el;
       });
     } else {
-      var app = appList.apps[appList.sel];
-      panel.appendChild(line(app.name + ' · ¿dónde la pongo?', 'head'));
+      panel.appendChild(line(appList.choiceTitle, 'title'));
       appList.choices.forEach(function (c, i) {
         var el = line(c.label, 'app' + (i === appList.choiceSel ? ' sel' : ''));
         panel.appendChild(el);
@@ -580,23 +679,35 @@
     }
     // Mantener visible la línea seleccionada
     if (selEl) {
-      if (selEl.offsetTop < panel.scrollTop + 60) panel.scrollTop = selEl.offsetTop - 60;
+      if (selEl.offsetTop < panel.scrollTop + 80) panel.scrollTop = selEl.offsetTop - 80;
       else if (selEl.offsetTop + selEl.offsetHeight > panel.scrollTop + panel.clientHeight - 20) {
         panel.scrollTop = selEl.offsetTop + selEl.offsetHeight - panel.clientHeight + 20;
       }
     }
   }
 
+  function changeWidget(it, dir) {
+    cycleOption(it.widget, dir);
+    saveConfig();
+    buildEditItems();
+    renderAppList();
+  }
+
   function openRowChooser() {
-    var app = appList.apps[appList.sel];
-    if (!app) return;
-    var current = rowOfApp(app.id);
+    var it = appList.items[appList.sel];
+    if (!it || it.head) return;
+    if (it.widget) return changeWidget(it, 1);
+    var at = it.tile ? { r: it.r, i: it.i } : findTvApp(it.app.id);
     var choices = [];
-    if (current >= 0) choices.push({ label: 'Quitar de «' + (config.rows[current].title || '') + '»', remove: current });
+    if (at) choices.push({ label: 'Quitar del launcher', remove: true });
     config.rows.forEach(function (row, r) {
-      if (r !== current) choices.push({ label: (current >= 0 ? 'Mover a «' : 'Añadir a «') + (row.title || '') + '»', row: r });
+      if (!at || r !== at.r) choices.push({ label: (at ? 'Mover a «' : 'Añadir a «') + (row.title || '') + '»', row: r });
     });
+    if (at && at.i > 0) choices.push({ label: 'Mover a la izquierda', shift: -1 });
+    if (at && at.i < config.rows[at.r].tiles.length - 1) choices.push({ label: 'Mover a la derecha', shift: 1 });
     choices.push({ label: 'Nueva fila «Mis apps»', row: -1 });
+    appList.choiceTitle = (it.tile ? it.tile.name : it.app.name) + (at ? ' · ¿qué hago?' : ' · ¿dónde la pongo?');
+    appList.target = { at: at, app: it.app };
     appList.choices = choices;
     appList.choiceSel = 0;
     appList.mode = 'rows';
@@ -604,44 +715,50 @@
   }
 
   function applyRowChoice() {
-    var app = appList.apps[appList.sel];
+    var target = appList.target;
     var choice = appList.choices[appList.choiceSel];
-    var current = rowOfApp(app.id);
+    var at = target.at;
     var tile = null;
-    if (current >= 0) {
-      var tiles = config.rows[current].tiles;
-      for (var i = 0; i < tiles.length; i++) {
-        if (tiles[i].type === 'tvapp' && tiles[i].id === app.id) { tile = tiles.splice(i, 1)[0]; break; }
-      }
-    }
-    if (choice.remove !== undefined) {
-      setStatus(app.name + ' quitada');
+    if (choice.shift) {
+      var list = config.rows[at.r].tiles;
+      var j = at.i + choice.shift;
+      var moved = list[at.i]; list[at.i] = list[j]; list[j] = moved;
+      setStatus((moved.name || '') + ' movida');
     } else {
-      var r = choice.row;
-      if (r < 0) {
-        config.rows.push({ title: 'Mis apps', tiles: [] });
-        r = config.rows.length - 1;
+      if (at) tile = config.rows[at.r].tiles.splice(at.i, 1)[0];
+      var name = tile ? tile.name : target.app.name;
+      if (choice.remove) {
+        setStatus(name + ' quitada del launcher');
+      } else {
+        var r = choice.row;
+        if (r < 0) {
+          config.rows.push({ title: 'Mis apps', tiles: [] });
+          r = config.rows.length - 1;
+        }
+        // Fondo oscuro neutro: el logo de la app ya da el color
+        config.rows[r].tiles.push(tile || { name: target.app.name, type: 'tvapp', id: target.app.id, color: '#1c1f26' });
+        setStatus(name + (at ? ' movida a «' : ' añadida a «') + config.rows[r].title + '»');
       }
-      // Fondo oscuro neutro: el logo de la app ya da el color
-      config.rows[r].tiles.push(tile || { name: app.name, type: 'tvapp', id: app.id, color: '#1c1f26' });
-      setStatus(app.name + ' añadida a «' + config.rows[r].title + '»');
     }
     // Las filas que se quedan vacías desaparecen
     config.rows = config.rows.filter(function (row) { return row.tiles && row.tiles.length; });
     saveConfig();
     renderRows();
     appList.mode = 'list';
+    buildEditItems();
+    if (!selectable(appList.sel)) appList.sel = nextSelectable(appList.sel, -1);
     renderAppList();
   }
 
   function appListKey(code) {
     if (appList.mode === 'list') {
-      if (!appList.apps.length) return;
       if (code === KEY.UP || code === KEY.DOWN) {
-        appList.sel = Math.max(0, Math.min(appList.apps.length - 1, appList.sel + (code === KEY.DOWN ? 1 : -1)));
+        appList.sel = nextSelectable(appList.sel, code === KEY.DOWN ? 1 : -1);
+      } else if ((code === KEY.LEFT || code === KEY.RIGHT) && appList.items[appList.sel].widget) {
+        return changeWidget(appList.items[appList.sel], code === KEY.RIGHT ? 1 : -1);
       } else if (code === KEY.LEFT || code === KEY.RIGHT) {
         // Saltar de 10 en 10 para listas largas
-        appList.sel = Math.max(0, Math.min(appList.apps.length - 1, appList.sel + (code === KEY.RIGHT ? 10 : -10)));
+        for (var k = 0; k < 10; k++) appList.sel = nextSelectable(appList.sel, code === KEY.RIGHT ? 1 : -1);
       } else if (code === KEY.ENTER) return openRowChooser();
       renderAppList();
     } else {
@@ -661,6 +778,47 @@
     return 0;
   }
 
+  // Opciones de los widgets, compartidas por Ajustes y Editar
+  function newsItem() {
+    var n = config.widgets.news || {};
+    var list = NEWS.slice();
+    if (n.url && !list.some(function (o) { return o.value === n.url; })) list.unshift({ name: n.title || 'Personalizada', value: n.url });
+    return {
+      label: 'Noticias', list: list,
+      get: function () { return n.url || ''; },
+      set: function (v) {
+        var src = list[findIndex(list, v)];
+        config.widgets.news = v ? { title: src.name, url: v } : null;
+      },
+      after: function () { newsItems = []; loadNews(); }
+    };
+  }
+
+  function widgetItems() {
+    var items = [
+      { label: 'Previsión del tiempo', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
+        get: function () { return !!config.widgets.forecast; },
+        set: function (v) { config.widgets.forecast = v; },
+        after: function () { if (config.widgets.forecast) loadWeather(); else $('w-forecast').className = 'widget hidden'; } },
+      newsItem()
+    ];
+    var ha = config.widgets.homeassistant;
+    if (ha && ha.url && ha.token) {
+      items.push({ label: 'Casa (Home Assistant)', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
+        get: function () { return ha.enabled !== false; },
+        set: function (v) { ha.enabled = v; },
+        after: function () { loadHomeAssistant(); } });
+    }
+    return items;
+  }
+
+  function cycleOption(it, dir) {
+    var i = findIndex(it.list, it.get());
+    i = ((i < 0 ? 0 : i + dir) + it.list.length) % it.list.length;
+    it.set(it.list[i].value);
+    if (it.after) it.after();
+  }
+
   function settingsItems() {
     var t = config.theme;
     var info;
@@ -675,6 +833,7 @@
       { label: 'Tipografía', list: FONTS, get: function () { return t.font || 'sans'; }, set: function (v) { t.font = v; } },
       { label: 'Animaciones', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
         get: function () { return t.anim !== false; }, set: function (v) { t.anim = v; } },
+      newsItem(),
       { label: 'Modo reposo OLED', list: SAVER, get: function () { return config.screensaver.minutes; }, set: function (v) { config.screensaver.minutes = v; } },
       { label: 'Abrir al iniciar TizenBrew', list: [{ name: 'No', value: false }, { name: 'Sí', value: true }],
         get: function () { return !!config.autolaunch; }, set: function (v) { config.autolaunch = v; setAutolaunch(v); } },
@@ -737,9 +896,7 @@
     } else if (code === KEY.LEFT || code === KEY.RIGHT) {
       var it = items[settingsSel];
       if (it.info) return;
-      var i = findIndex(it.list, it.get()) + (code === KEY.RIGHT ? 1 : -1);
-      i = (i + it.list.length) % it.list.length;
-      it.set(it.list[i].value);
+      cycleOption(it, code === KEY.RIGHT ? 1 : -1);
       applyTheme();
       renderRows();
       saveConfig();
@@ -792,7 +949,7 @@
   function sideItems() {
     var items = [];
     if ($('w-forecast').className.indexOf('hidden') === -1) items.push({ el: $('w-forecast'), action: openWeather });
-    var lis = document.querySelectorAll('#w-news li');
+    var lis = $('w-news').className.indexOf('hidden') === -1 ? document.querySelectorAll('#w-news li') : [];
     for (var i = 0; i < lis.length; i++) items.push({ el: lis[i], news: i, action: (function (n) { return function () { openNews(n); }; })(i) });
     return items;
   }

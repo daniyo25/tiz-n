@@ -151,6 +151,7 @@
       idField,
       input(t, 'color', 'Color', { type: 'color' }),
       input(t, 'icon', 'Logo (URL, opcional)'),
+      input(t, 'banner', 'Imagen panorámica (URL, rellena toda la tarjeta)', { full: true }),
       el('div', { 'class': 'actions full' }, [
         el('button', { text: '↑', onclick: function () { move(row.tiles, i, -1); } }),
         el('button', { text: '↓', onclick: function () { move(row.tiles, i, 1); } }),

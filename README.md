@@ -19,12 +19,14 @@ jsDelivr guarda en caché las ramas hasta 12 horas. Para probar una versión al 
 | Tecla | Acción |
 | --- | --- |
 | Flechas | Moverse por los accesos (izquierda/derecha dentro de una fila, arriba/abajo entre filas) |
-| Arriba desde la primera fila | Menú de arriba: Apps instaladas, Ajustes, Recargar y el tiempo |
+| Arriba desde la primera fila | Menú de arriba: Editar, Ajustes, Recargar y el tiempo |
 | Derecha desde el final de una fila | Columna de widgets: previsión y noticias, con arriba/abajo |
 | OK | Abrir el acceso, la opción del menú, el tiempo completo o la noticia |
 | Volver | Cerrar el panel abierto o volver a TizenBrew |
 
-En la noticia abierta, izquierda/derecha pasan a la siguiente y arriba/abajo desplazan el texto. La lista de apps instaladas permite añadir una app a una fila, moverla o quitarla; izquierda y derecha saltan de 10 en 10. Ajustes tiene estilo (Apple TV o clásico), color, tamaño, tipografía, animaciones, modo reposo, autoarranque y la dirección del editor.
+En la noticia abierta, izquierda/derecha pasan a la siguiente y arriba/abajo desplazan el texto. Editar muestra, con su icono, los accesos del launcher (OK para quitarlos, moverlos de fila o de sitio), los widgets (OK o ←→ para cambiarlos: previsión, fuente de noticias y Home Assistant) y las apps instaladas (OK para añadirlas); izquierda y derecha saltan de 10 en 10. Ajustes tiene estilo (Apple TV o clásico), color, tamaño, tipografía, animaciones, fuente de noticias, modo reposo, autoarranque y la dirección del editor.
+
+Los logos de las apps ocupan toda la tarjeta cuando tienen fondo liso: la tarjeta toma el color del borde del logo, sin estirarlo. Si prefieres una imagen panorámica propia, ponla en el campo `banner` del acceso (o en «Imagen panorámica» del editor del móvil).
 
 Los botones de colores siguen funcionando como atajos (rojo recargar, verde tamaño, amarillo apps, azul ajustes), pero no hacen falta.
 

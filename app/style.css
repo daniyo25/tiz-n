@@ -106,6 +106,11 @@ h1 { font-size: 60px; font-weight: 700; }
 }
 .tile.focused.pressed { transform: scale(.97); transition-duration: .12s; }
 
+/* Logo que ocupa toda la tarjeta: el fondo toma el color del borde del logo */
+.tile.logo-fill img { top: 0; height: 100%; max-width: 100%; border-radius: 0; }
+.tile.logo-fill .name, .tile.banner .name { opacity: 0; }
+.tile.logo-fill.focused .name, .tile.banner.focused .name { opacity: 1; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+
 /* Animaciones de entrada (solo al abrir) */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: none; } }
 @keyframes slideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
@@ -204,9 +209,17 @@ footer .hint { opacity: .7; }
   font-size: 24px;
   line-height: 1.6;
 }
-#applist .head { opacity: .6; margin: 4px 0 12px; }
-#applist .app { padding: 6px 18px; border-radius: 12px; display: flex; justify-content: space-between; gap: 20px; }
-#applist .app .id { opacity: .45; font-size: 20px; }
+#applist .title { font-size: 36px; font-weight: 700; margin-bottom: 8px; }
+#applist .head { opacity: .6; margin: 18px 0 8px; font-size: 20px; text-transform: uppercase; letter-spacing: 1px; }
+#applist .app { padding: 8px 18px; border-radius: 12px; display: flex; align-items: center; gap: 18px; }
+#applist .app .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#applist .app .id { opacity: .45; font-size: 20px; white-space: nowrap; }
+#applist .app.opt { padding-top: 12px; padding-bottom: 12px; }
+#applist .app .val { font-weight: 600; white-space: nowrap; }
+#applist .app.sel .val::before { content: "‹  "; opacity: .6; }
+#applist .app.sel .val::after { content: "  ›"; opacity: .6; }
+#applist .ico { width: 72px; height: 44px; border-radius: 8px; flex: none; position: relative; overflow: hidden; }
+#applist .ico img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
 #applist .app.sel { background: #262a33; box-shadow: inset 0 0 0 3px var(--accent); }
 #settings {
   top: 120px; left: 50%;
@@ -268,6 +281,9 @@ body.style-tvos .tile.noicon .name {
   bottom: 50%; transform: translateY(50%);
   font-size: var(--tile-font); font-weight: 700; opacity: 1;
 }
+body.style-tvos .tile.logo-fill img { top: 0; height: 100%; max-width: 100%; transform: translateX(-50%); }
+body.style-tvos .tile.logo-fill .name, body.style-tvos .tile.banner .name { opacity: 0; }
+body.style-tvos .tile.logo-fill.focused .name, body.style-tvos .tile.banner.focused .name { opacity: 1; text-shadow: none; }
 body.style-tvos .tile .kind { top: 10px; right: 14px; font-size: 14px; }
 body.style-tvos .tile.focused {
   transform: scale(1.14) translateY(-6px);
