@@ -126,7 +126,7 @@
     document.documentElement.style.setProperty('--accent', t.accent || '#ffffff');
     var intro = document.body.className.indexOf('intro') !== -1 ? ' intro' : '';
     document.body.className = 'size-' + (t.size || 'm') + ' font-' + (t.font || 'sans') +
-      ' style-' + (t.style || 'classic') +
+      ' style-' + (t.style || 'tvos') +
       (t.anim === false ? ' noanim' : '') + intro;
   }
 
@@ -646,7 +646,7 @@
     else if (!serviceInfo.ip) info = 'No encuentro la IP de la tele';
     else info = 'http://' + serviceInfo.ip + ':' + serviceInfo.port + '/editor  ·  PIN ' + serviceInfo.pin;
     return [
-      { label: 'Estilo', list: STYLES, get: function () { return t.style || 'classic'; }, set: function (v) { t.style = v; } },
+      { label: 'Estilo', list: STYLES, get: function () { return t.style || 'tvos'; }, set: function (v) { t.style = v; } },
       { label: 'Color de acento', list: ACCENTS, get: function () { return t.accent || '#ffffff'; }, set: function (v) { t.accent = v; } },
       { label: 'Tamaño de accesos', list: SIZES, get: function () { return t.size || 'm'; }, set: function (v) { t.size = v; } },
       { label: 'Tipografía', list: FONTS, get: function () { return t.font || 'sans'; }, set: function (v) { t.font = v; } },
