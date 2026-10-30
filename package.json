@@ -1,8 +1,8 @@
 {
   "name": "tiz-n",
   "appName": "Dani Launcher",
-  "version": "0.2.1",
-  "description": "Launcher personal para TVs Samsung: cuadrícula de apps y módulos, reloj y tiempo.",
+  "version": "0.3.0",
+  "description": "Launcher personal para TVs Samsung: filas de accesos con logos, widgets, modo reposo OLED y editor desde el móvil.",
   "packageType": "app",
   "appPath": "app/index.html",
   "keys": [
