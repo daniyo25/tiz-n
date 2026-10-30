@@ -419,6 +419,13 @@
 
   // El PIN se recuerda en este móvil
   try { $('pin').value = localStorage.getItem('daniLauncherPin') || ''; } catch (e) { /* sin almacenamiento */ }
+  // Al entrar desde el código QR de la tele, el PIN viene en la dirección
+  var qp = /[?&]pin=(\d{4})/.exec(location.search);
+  if (qp) {
+    $('pin').value = qp[1];
+    try { localStorage.setItem('daniLauncherPin', qp[1]); } catch (e) { /* sin almacenamiento */ }
+    if (history.replaceState) history.replaceState(null, '', location.pathname);
+  }
   $('pin').addEventListener('input', function () {
     try { localStorage.setItem('daniLauncherPin', $('pin').value); } catch (e) { /* sin almacenamiento */ }
   });

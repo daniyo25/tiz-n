@@ -234,6 +234,12 @@ footer .hint { opacity: .7; }
   font-size: 26px;
 }
 #settings h2 { font-size: 34px; margin-bottom: 20px; }
+#settings { width: 1300px; margin-left: -650px; }
+#settings .cols { display: flex; gap: 40px; align-items: flex-start; }
+#settings .list { flex: 1; min-width: 0; }
+#settings .qr { flex: none; width: 280px; text-align: center; }
+#settings .qr img { width: 280px; height: 280px; border-radius: 18px; background: #fff; image-rendering: pixelated; }
+#settings .qr-cap { font-size: 20px; opacity: .6; margin-top: 10px; }
 #settings .item { display: flex; justify-content: space-between; padding: 14px 20px; border-radius: 14px; }
 #settings .item.sel { background: #262a33; box-shadow: inset 0 0 0 3px var(--accent); }
 #settings .val { font-weight: 600; }

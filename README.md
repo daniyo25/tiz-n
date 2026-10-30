@@ -32,7 +32,7 @@ Los botones de colores siguen funcionando como atajos (rojo recargar, verde tama
 
 ## Editar desde el móvil
 
-En Ajustes (botón azul) aparecen la dirección del editor y un PIN, por ejemplo `http://192.168.1.50:8091/editor`. Ábrela en el navegador del móvil, con el móvil en la misma wifi que la tele. Desde ahí puedes:
+En Ajustes aparece un código QR: escanéalo con la cámara del móvil y entras directo, sin escribir el PIN. Al lado están también la dirección del editor y el PIN, por ejemplo `http://192.168.1.50:8091/editor`. Ábrela en el navegador del móvil, con el móvil en la misma wifi que la tele. Desde ahí puedes:
 
 - Cambiar el saludo, el fondo y la ciudad del tiempo.
 - Ver la lista de apps instaladas en la tele, con su logo, y añadirlas o quitarlas del launcher con un toque. Se guarda al momento en la fila que elijas.
@@ -84,3 +84,5 @@ El código del servicio está en `service/src/`. TizenBrew solo admite un archiv
 ```sh
 node tools/build-service.js
 ```
+
+El código QR se genera en la propia tele con [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT, Kazuhiko Arase), copiado en `app/vendor/qrcode.js`.

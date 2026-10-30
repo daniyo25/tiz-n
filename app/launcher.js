@@ -1017,19 +1017,40 @@
 
   function renderSettings() {
     var panel = $('settings');
-    panel.innerHTML = '<h2>Ajustes</h2>';
+    panel.innerHTML = '<h2>Ajustes</h2><div class="cols"><div class="list"></div></div>';
+    var list = panel.querySelector('.list');
     settingsItems().forEach(function (it, i) {
       var row = document.createElement('div');
       row.className = 'item' + (it.info ? ' info' : '') + (i === settingsSel ? ' sel' : '');
       row.innerHTML = '<span></span><span class="val"></span>';
       row.children[0].textContent = it.label;
       row.children[1].textContent = it.info || it.list[findIndex(it.list, it.get())].name;
-      panel.appendChild(row);
+      list.appendChild(row);
     });
     var hint = document.createElement('div');
     hint.className = 'hint';
-    hint.textContent = '↑↓ elegir · ←→ cambiar · Volver para cerrar. Para editar los accesos, abre la dirección de arriba en el navegador del móvil con la tele y el móvil en la misma wifi.';
-    panel.appendChild(hint);
+    hint.textContent = '↑↓ elegir · ←→ cambiar · Volver para cerrar. Para editar desde el móvil, escanea el código QR o abre la dirección de arriba, con la tele y el móvil en la misma wifi.';
+    list.appendChild(hint);
+    var qr = editorQr();
+    if (qr) panel.querySelector('.cols').appendChild(qr);
+  }
+
+  // Código QR con la dirección del editor y el PIN: al escanearlo, el móvil entra sin escribir nada
+  function editorQr() {
+    if (!serviceInfo || serviceInfo.error || !serviceInfo.ip || !window.qrcode) return null;
+    var link = 'http://' + serviceInfo.ip + ':' + serviceInfo.port + '/editor?pin=' + serviceInfo.pin;
+    try {
+      var q = qrcode(0, 'M');
+      q.addData(link);
+      q.make();
+      var box = document.createElement('div');
+      box.className = 'qr';
+      var img = document.createElement('img');
+      img.src = q.createDataURL(8, 2);
+      box.appendChild(img);
+      box.appendChild(line('Escanéalo con el móvil', 'qr-cap'));
+      return box;
+    } catch (e) { return null; }
   }
 
   function toggleSettings() {
