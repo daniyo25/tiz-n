@@ -198,6 +198,104 @@ footer {
 #settings .item.info .val::before, #settings .item.info .val::after { content: ""; }
 #settings .hint { margin-top: 18px; font-size: 20px; opacity: .55; }
 
+/* Estilo Apple TV: cristal esmerilado, iconos que flotan al enfocarlos y nombre debajo */
+body.style-tvos.font-sans { font-family: -apple-system, "SF Pro Display", "Helvetica Neue", "SamsungOne", Arial, sans-serif; }
+body.style-tvos { letter-spacing: -.2px; }
+body.style-tvos header { padding-top: 56px; }
+body.style-tvos h1 { font-size: 52px; font-weight: 700; letter-spacing: -1px; }
+body.style-tvos #date { font-size: 26px; opacity: .55; }
+body.style-tvos #clock { font-size: 64px; font-weight: 500; letter-spacing: -1px; }
+body.style-tvos #weather { font-size: 26px; opacity: .6; }
+body.style-tvos .row { margin-bottom: 4px; }
+body.style-tvos .row-title { font-size: 24px; font-weight: 600; opacity: .45; }
+body.style-tvos .row.active .row-title { color: #fff; opacity: .9; }
+body.style-tvos .strip { padding: 20px 24px 50px; }
+body.style-tvos .tile {
+  border-radius: 14px;
+  overflow: visible;
+  margin-right: 40px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  transition: transform .35s cubic-bezier(.2, .9, .3, 1.15), box-shadow .35s ease;
+}
+/* Brillo especular, como el reflejo de los iconos de tvOS */
+body.style-tvos .tile::after {
+  content: "";
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(255,255,255,.28) 0%, rgba(255,255,255,0) 45%);
+  opacity: 0;
+  transition: opacity .35s ease;
+  pointer-events: none;
+}
+body.style-tvos .tile img { top: 50%; height: 56%; max-width: 76%; transform: translate(-50%, -50%); border-radius: 0; }
+body.style-tvos .tile .name {
+  left: 0; right: 0; bottom: -44px;
+  text-align: center;
+  font-size: calc(var(--tile-font) * .78);
+  font-weight: 500;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity .3s ease, transform .3s ease;
+}
+body.style-tvos .tile.noicon .name {
+  bottom: 50%; transform: translateY(50%);
+  font-size: var(--tile-font); font-weight: 700; opacity: 1;
+}
+body.style-tvos .tile .kind { top: 10px; right: 14px; font-size: 14px; }
+body.style-tvos .tile.focused {
+  transform: scale(1.14) translateY(-6px);
+  box-shadow: 0 34px 50px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.12);
+}
+body.style-tvos .tile.focused::after { opacity: 1; animation: tvGlint 4s ease-in-out infinite; }
+body.style-tvos .tile.focused .name { opacity: 1; transform: none; }
+body.style-tvos .tile.focused.noicon .name { transform: translateY(50%); }
+body.style-tvos .tile.focused.pressed { transform: scale(1.06); }
+/* Balanceo suave del icono enfocado, como el efecto 3D al tocar el mando de Apple */
+body.style-tvos .row.active .tile.focused { animation: tvSway 5s ease-in-out .4s infinite; }
+@keyframes tvSway {
+  0%, 100% { transform: perspective(900px) scale(1.14) translateY(-6px) rotateX(0) rotateY(0); }
+  25% { transform: perspective(900px) scale(1.14) translateY(-6px) rotateX(2deg) rotateY(-3deg); }
+  75% { transform: perspective(900px) scale(1.14) translateY(-6px) rotateX(-2deg) rotateY(3deg); }
+}
+@keyframes tvGlint {
+  0%, 100% { background-position: 0 0; opacity: .9; }
+  50% { opacity: .55; }
+}
+body.style-tvos .row.active .tile.focused.pressed { animation: none; }
+
+/* Cristal esmerilado para widgets y paneles */
+body.style-tvos .widget {
+  border: 0;
+  border-radius: 22px;
+  background: rgba(118,118,128,.18);
+  -webkit-backdrop-filter: blur(40px) saturate(1.6);
+  backdrop-filter: blur(40px) saturate(1.6);
+}
+body.style-tvos .widget h3 { text-transform: none; letter-spacing: 0; font-size: 20px; opacity: .6; }
+body.style-tvos .news li { border-top-color: rgba(255,255,255,.1); }
+body.style-tvos .panel {
+  background: rgba(44,44,48,.82);
+  -webkit-backdrop-filter: blur(50px) saturate(1.8);
+  backdrop-filter: blur(50px) saturate(1.8);
+  border-radius: 30px;
+  box-shadow: 0 40px 80px rgba(0,0,0,.6);
+}
+body.style-tvos #settings h2, body.style-tvos #applist .head { font-weight: 700; letter-spacing: -.5px; }
+body.style-tvos #settings .item, body.style-tvos #applist .app {
+  border-radius: 14px;
+  transition: transform .2s ease, background .2s ease;
+}
+body.style-tvos #settings .item.sel, body.style-tvos #applist .app.sel {
+  background: #fff;
+  color: #000;
+  box-shadow: 0 12px 24px rgba(0,0,0,.4);
+  transform: scale(1.03);
+}
+body.style-tvos #applist .app.sel .id { opacity: .5; }
+body.style-tvos footer { font-size: 22px; opacity: .45; }
+body.style-tvos .dot { width: 16px; height: 16px; }
+
 /* Modo reposo OLED: solo un reloj tenue que cambia de sitio */
 #saver {
   display: none;

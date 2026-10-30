@@ -29,6 +29,7 @@
   ];
   var SIZES = [{ name: 'Pequeño', value: 's' }, { name: 'Normal', value: 'm' }, { name: 'Grande', value: 'l' }];
   var FONTS = [{ name: 'Samsung', value: 'sans' }, { name: 'Serif', value: 'serif' }, { name: 'Máquina de escribir', value: 'mono' }];
+  var STYLES = [{ name: 'Apple TV', value: 'tvos' }, { name: 'Clásico', value: 'classic' }];
   var SAVER = [{ name: 'Nunca', value: 0 }, { name: '2 min', value: 2 }, { name: '5 min', value: 5 }, { name: '10 min', value: 10 }, { name: '30 min', value: 30 }];
 
   var config = null;
@@ -125,6 +126,7 @@
     document.documentElement.style.setProperty('--accent', t.accent || '#ffffff');
     var intro = document.body.className.indexOf('intro') !== -1 ? ' intro' : '';
     document.body.className = 'size-' + (t.size || 'm') + ' font-' + (t.font || 'sans') +
+      ' style-' + (t.style || 'classic') +
       (t.anim === false ? ' noanim' : '') + intro;
   }
 
@@ -644,6 +646,7 @@
     else if (!serviceInfo.ip) info = 'No encuentro la IP de la tele';
     else info = 'http://' + serviceInfo.ip + ':' + serviceInfo.port + '/editor  ·  PIN ' + serviceInfo.pin;
     return [
+      { label: 'Estilo', list: STYLES, get: function () { return t.style || 'classic'; }, set: function (v) { t.style = v; } },
       { label: 'Color de acento', list: ACCENTS, get: function () { return t.accent || '#ffffff'; }, set: function (v) { t.accent = v; } },
       { label: 'Tamaño de accesos', list: SIZES, get: function () { return t.size || 'm'; }, set: function (v) { t.size = v; } },
       { label: 'Tipografía', list: FONTS, get: function () { return t.font || 'sans'; }, set: function (v) { t.font = v; } },
