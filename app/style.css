@@ -93,11 +93,11 @@ footer {
   top: 80px; right: 120px; bottom: 140px;
   width: 760px;
   padding: 32px 40px;
-  overflow: hidden;
+  overflow-y: auto;
   background: #111;
   border-radius: 24px;
   font-size: 24px;
   line-height: 1.6;
-  column-count: 1;
 }
+#applist .head { opacity: .6; margin-bottom: 12px; }
 #applist.open { display: block; }
