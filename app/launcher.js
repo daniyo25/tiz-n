@@ -35,6 +35,7 @@
   var rowEls = [];      // [{ el, strip, tiles: [el], data: [tile] }]
   var focusRow = 0;
   var focusCol = [];    // última columna enfocada en cada fila
+  var rowsY = 0;        // desplazamiento vertical de las filas
   var tbModules = null;
   var ws = null;
   var pendingModule = null;
@@ -114,7 +115,9 @@
   function applyTheme() {
     var t = config.theme;
     document.documentElement.style.setProperty('--accent', t.accent || '#ffffff');
-    document.body.className = 'size-' + (t.size || 'm') + ' font-' + (t.font || 'sans');
+    var intro = document.body.className.indexOf('intro') !== -1 ? ' intro' : '';
+    document.body.className = 'size-' + (t.size || 'm') + ' font-' + (t.font || 'sans') +
+      (t.anim === false ? ' noanim' : '') + intro;
   }
 
   // ---------- Reloj y tiempo ----------
@@ -305,15 +308,20 @@
       title.textContent = row.title || '';
       var strip = document.createElement('div');
       strip.className = 'strip';
+      // Los accesos van en una pista que se desplaza con transform: más fluido en la tele que scrollLeft
+      var track = document.createElement('div');
+      track.className = 'track';
+      strip.appendChild(track);
       var tiles = row.tiles.map(function (t, c) {
         var tile = buildTile(t, idx, c);
-        strip.appendChild(tile);
+        track.appendChild(tile);
         return tile;
       });
       el.appendChild(title);
       el.appendChild(strip);
       inner.appendChild(el);
-      rowEls.push({ el: el, strip: strip, tiles: tiles, data: row.tiles });
+      rowEls.push({ el: el, strip: strip, track: track, x: 0, tiles: tiles, data: row.tiles });
+      if (document.body.className.indexOf('intro') !== -1) el.style.animationDelay = (150 + idx * 90) + 'ms';
       if (focusCol[idx] === undefined || focusCol[idx] >= tiles.length) focusCol[idx] = 0;
     });
     if (focusRow >= rowEls.length) focusRow = 0;
@@ -331,17 +339,16 @@
     row.el.className += ' active';
     tile.className += ' focused';
     // Mantener visible el acceso enfocado (horizontal) y la fila enfocada (vertical)
-    var strip = row.strip;
-    if (tile.offsetLeft + tile.offsetWidth + 40 > strip.scrollLeft + strip.clientWidth) {
-      strip.scrollLeft = tile.offsetLeft + tile.offsetWidth + 40 - strip.clientWidth;
-    } else if (tile.offsetLeft - 16 < strip.scrollLeft) {
-      strip.scrollLeft = Math.max(0, tile.offsetLeft - 16);
+    var visible = row.strip.clientWidth - 32;
+    if (tile.offsetLeft + tile.offsetWidth + 24 > row.x + visible) row.x = tile.offsetLeft + tile.offsetWidth + 24 - visible;
+    else if (tile.offsetLeft < row.x) row.x = Math.max(0, tile.offsetLeft);
+    row.track.style.transform = 'translateX(' + (-row.x) + 'px)';
+    var rows = $('rows'), inner = $('rowsInner');
+    if (row.el.offsetTop < rowsY) rowsY = row.el.offsetTop;
+    else if (row.el.offsetTop + row.el.offsetHeight > rowsY + rows.clientHeight) {
+      rowsY = row.el.offsetTop + row.el.offsetHeight - rows.clientHeight;
     }
-    var rows = $('rows');
-    if (row.el.offsetTop < rows.scrollTop) rows.scrollTop = row.el.offsetTop;
-    else if (row.el.offsetTop + row.el.offsetHeight > rows.scrollTop + rows.clientHeight) {
-      rows.scrollTop = row.el.offsetTop + row.el.offsetHeight - rows.clientHeight;
-    }
+    inner.style.transform = 'translateY(' + (-rowsY) + 'px)';
   }
 
   function move(dx, dy) {
@@ -355,6 +362,20 @@
       if (c < 0 || c >= rowEls[focusRow].tiles.length) return;
       setFocus(focusRow, c);
     }
+  }
+
+  // Pequeño "clic" visual antes de abrir
+  function press() {
+    var row = rowEls[focusRow];
+    if (!row) return;
+    var tile = row.tiles[focusCol[focusRow]];
+    var data = focusedTile();
+    if (!config.theme.anim && config.theme.anim !== undefined) return launch(data);
+    tile.className += ' pressed';
+    setTimeout(function () {
+      tile.className = tile.className.replace(' pressed', '');
+      launch(data);
+    }, 140);
   }
 
   function focusedTile() {
@@ -461,28 +482,141 @@
 
   function isOpen(id) { return $(id).className === 'panel open'; }
 
+  // Con OK sobre una app se elige en qué fila añadirla (o quitarla si ya está)
+  var appList = { apps: [], sel: 0, mode: 'list', choices: [], choiceSel: 0 };
+
   function toggleAppList() {
     var panel = $('applist');
     if (isOpen('applist')) { panel.className = 'panel'; return; }
     closePanels();
     panel.className = 'panel open';
     panel.textContent = 'Cargando apps instaladas…';
+    appList.mode = 'list';
     getJSON(SERVICE_URL + '/apps', function (err, data) {
       if (err || !data.apps) {
         panel.textContent = 'No se pudo obtener la lista (' + errText(err, data) + ')';
         return;
       }
-      panel.innerHTML = '';
-      var head = document.createElement('div');
-      head.className = 'head';
-      head.textContent = data.apps.length + ' apps · ↑↓ para desplazarte · Volver para cerrar';
-      panel.appendChild(head);
-      data.apps.forEach(function (a) {
-        var row = document.createElement('div');
-        row.textContent = a.name + '  ·  ' + a.id;
-        panel.appendChild(row);
-      });
+      appList.apps = data.apps;
+      appList.sel = Math.min(appList.sel, data.apps.length - 1);
+      renderAppList();
     });
+  }
+
+  // Fila en la que ya está una app, o -1
+  function rowOfApp(id) {
+    for (var r = 0; r < config.rows.length; r++) {
+      var tiles = config.rows[r].tiles || [];
+      for (var i = 0; i < tiles.length; i++) if (tiles[i].type === 'tvapp' && tiles[i].id === id) return r;
+    }
+    return -1;
+  }
+
+  function line(text, className) {
+    var el = document.createElement('div');
+    el.className = className || '';
+    el.textContent = text;
+    return el;
+  }
+
+  function renderAppList() {
+    var panel = $('applist');
+    panel.innerHTML = '';
+    var selEl = null;
+    if (appList.mode === 'list') {
+      panel.appendChild(line(appList.apps.length + ' apps · OK para añadir a una fila · Volver para cerrar', 'head'));
+      appList.apps.forEach(function (a, i) {
+        var r = rowOfApp(a.id);
+        var el = line(a.name + (r >= 0 ? '  ✓ ' + (config.rows[r].title || '') : ''), 'app' + (i === appList.sel ? ' sel' : ''));
+        var id = document.createElement('span');
+        id.className = 'id';
+        id.textContent = a.id;
+        el.appendChild(id);
+        panel.appendChild(el);
+        if (i === appList.sel) selEl = el;
+      });
+    } else {
+      var app = appList.apps[appList.sel];
+      panel.appendChild(line(app.name + ' · ¿dónde la pongo?', 'head'));
+      appList.choices.forEach(function (c, i) {
+        var el = line(c.label, 'app' + (i === appList.choiceSel ? ' sel' : ''));
+        panel.appendChild(el);
+        if (i === appList.choiceSel) selEl = el;
+      });
+      panel.appendChild(line('Volver para cancelar', 'head'));
+    }
+    // Mantener visible la línea seleccionada
+    if (selEl) {
+      if (selEl.offsetTop < panel.scrollTop + 60) panel.scrollTop = selEl.offsetTop - 60;
+      else if (selEl.offsetTop + selEl.offsetHeight > panel.scrollTop + panel.clientHeight - 20) {
+        panel.scrollTop = selEl.offsetTop + selEl.offsetHeight - panel.clientHeight + 20;
+      }
+    }
+  }
+
+  function openRowChooser() {
+    var app = appList.apps[appList.sel];
+    if (!app) return;
+    var current = rowOfApp(app.id);
+    var choices = [];
+    if (current >= 0) choices.push({ label: 'Quitar de «' + (config.rows[current].title || '') + '»', remove: current });
+    config.rows.forEach(function (row, r) {
+      if (r !== current) choices.push({ label: (current >= 0 ? 'Mover a «' : 'Añadir a «') + (row.title || '') + '»', row: r });
+    });
+    choices.push({ label: 'Nueva fila «Mis apps»', row: -1 });
+    appList.choices = choices;
+    appList.choiceSel = 0;
+    appList.mode = 'rows';
+    renderAppList();
+  }
+
+  function applyRowChoice() {
+    var app = appList.apps[appList.sel];
+    var choice = appList.choices[appList.choiceSel];
+    var current = rowOfApp(app.id);
+    var tile = null;
+    if (current >= 0) {
+      var tiles = config.rows[current].tiles;
+      for (var i = 0; i < tiles.length; i++) {
+        if (tiles[i].type === 'tvapp' && tiles[i].id === app.id) { tile = tiles.splice(i, 1)[0]; break; }
+      }
+    }
+    if (choice.remove !== undefined) {
+      setStatus(app.name + ' quitada');
+    } else {
+      var r = choice.row;
+      if (r < 0) {
+        config.rows.push({ title: 'Mis apps', tiles: [] });
+        r = config.rows.length - 1;
+      }
+      // Fondo oscuro neutro: el logo de la app ya da el color
+      config.rows[r].tiles.push(tile || { name: app.name, type: 'tvapp', id: app.id, color: '#1c1f26' });
+      setStatus(app.name + ' añadida a «' + config.rows[r].title + '»');
+    }
+    // Las filas que se quedan vacías desaparecen
+    config.rows = config.rows.filter(function (row) { return row.tiles && row.tiles.length; });
+    saveConfig();
+    renderRows();
+    appList.mode = 'list';
+    renderAppList();
+  }
+
+  function appListKey(code) {
+    if (appList.mode === 'list') {
+      if (!appList.apps.length) return;
+      if (code === KEY.UP || code === KEY.DOWN) {
+        appList.sel = Math.max(0, Math.min(appList.apps.length - 1, appList.sel + (code === KEY.DOWN ? 1 : -1)));
+      } else if (code === KEY.LEFT || code === KEY.RIGHT) {
+        // Saltar de 10 en 10 para listas largas
+        appList.sel = Math.max(0, Math.min(appList.apps.length - 1, appList.sel + (code === KEY.RIGHT ? 10 : -10)));
+      } else if (code === KEY.ENTER) return openRowChooser();
+      renderAppList();
+    } else {
+      if (code === KEY.UP || code === KEY.DOWN) {
+        appList.choiceSel = Math.max(0, Math.min(appList.choices.length - 1, appList.choiceSel + (code === KEY.DOWN ? 1 : -1)));
+        renderAppList();
+      } else if (code === KEY.ENTER) applyRowChoice();
+    }
   }
 
   // ---------- Ajustes (azul) ----------
@@ -505,6 +639,8 @@
       { label: 'Color de acento', list: ACCENTS, get: function () { return t.accent || '#ffffff'; }, set: function (v) { t.accent = v; } },
       { label: 'Tamaño de accesos', list: SIZES, get: function () { return t.size || 'm'; }, set: function (v) { t.size = v; } },
       { label: 'Tipografía', list: FONTS, get: function () { return t.font || 'sans'; }, set: function (v) { t.font = v; } },
+      { label: 'Animaciones', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
+        get: function () { return t.anim !== false; }, set: function (v) { t.anim = v; } },
       { label: 'Modo reposo OLED', list: SAVER, get: function () { return config.screensaver.minutes; }, set: function (v) { config.screensaver.minutes = v; } },
       { label: 'Abrir al iniciar TizenBrew', list: [{ name: 'No', value: false }, { name: 'Sí', value: true }],
         get: function () { return !!config.autolaunch; }, set: function (v) { config.autolaunch = v; setAutolaunch(v); } },
@@ -589,6 +725,12 @@
 
   function moveSaverClock() {
     var c = $('saverClock');
+    // Se apaga, cambia de sitio y vuelve a aparecer
+    c.style.opacity = '0';
+    setTimeout(function () { placeSaverClock(c); c.style.opacity = ''; }, 1000);
+  }
+
+  function placeSaverClock(c) {
     c.style.left = Math.round(80 + Math.random() * (1920 - 160 - 360)) + 'px';
     c.style.top = Math.round(80 + Math.random() * (1080 - 160 - 150)) + 'px';
   }
@@ -596,7 +738,7 @@
   function startSaver() {
     closePanels();
     $('saver').className = 'on';
-    moveSaverClock();
+    placeSaverClock($('saverClock'));
     saverMove = setInterval(moveSaverClock, 60000);
   }
 
@@ -619,6 +761,12 @@
     resetIdle();
     if ($('saver').className === 'on') { stopSaver(); e.preventDefault(); return; }
 
+    if (code === KEY.BACK && isOpen('applist') && appList.mode === 'rows') {
+      appList.mode = 'list';
+      renderAppList();
+      e.preventDefault();
+      return;
+    }
     if (code === KEY.BACK && (isOpen('applist') || isOpen('settings'))) {
       closePanels();
       e.preventDefault();
@@ -630,10 +778,7 @@
       return;
     }
     if (isOpen('applist') && code !== KEY.YELLOW) {
-      var apps = $('applist');
-      if (code === KEY.UP || code === KEY.DOWN) {
-        apps.scrollTop += (code === KEY.DOWN ? 1 : -1) * (apps.clientHeight - 80);
-      }
+      appListKey(code);
       e.preventDefault();
       return;
     }
@@ -643,7 +788,7 @@
       case KEY.RIGHT: move(1, 0); break;
       case KEY.UP: move(0, -1); break;
       case KEY.DOWN: move(0, 1); break;
-      case KEY.ENTER: launch(focusedTile()); break;
+      case KEY.ENTER: press(); break;
       case KEY.RED: location.reload(); break;
       case KEY.GREEN: {
         var i = (findIndex(SIZES, config.theme.size || 'm') + 1) % SIZES.length;
@@ -666,6 +811,9 @@
 
   function start(cfg) {
     config = cfg;
+    // Animación de entrada solo al abrir el launcher, no al cambiar ajustes
+    document.body.className += ' intro';
+    setTimeout(function () { document.body.className = document.body.className.replace(' intro', ''); }, 2500);
     $('title').textContent = cfg.title || 'Hola';
     if (cfg.background) {
       $('bg').style.backgroundImage = 'url("' + cfg.background + '")';

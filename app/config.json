@@ -9,7 +9,8 @@
   "theme": {
     "accent": "#ffffff",
     "size": "m",
-    "font": "sans"
+    "font": "sans",
+    "anim": true
   },
   "screensaver": {
     "minutes": 5
