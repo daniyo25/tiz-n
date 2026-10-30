@@ -16,9 +16,10 @@ html, body {
   width: 1920px;
   height: 1080px;
   overflow: hidden;
-  background: #000;
   color: #f2f4f8;
 }
+/* Negro solo en html: si body tuviera fondo, taparía la imagen de #bg (z-index -1) */
+html { background: #000; }
 .hidden { display: none !important; }
 
 #bg {

@@ -31,16 +31,17 @@ jsDelivr guarda en caché las ramas hasta 12 horas. Para probar una versión al 
 En Ajustes (botón azul) aparecen la dirección del editor y un PIN, por ejemplo `http://192.168.1.50:8091/editor`. Ábrela en el navegador del móvil, con el móvil en la misma wifi que la tele. Desde ahí puedes:
 
 - Cambiar el saludo, el fondo y la ciudad del tiempo.
+- Ver la lista de apps instaladas en la tele, con su logo, y añadirlas o quitarlas del launcher con un toque. Se guarda al momento en la fila que elijas.
 - Añadir, quitar y ordenar filas y accesos. Las apps instaladas aparecen como sugerencias al escribir el ID.
 
-Al guardar, pulsa el botón rojo en la tele para recargar. El PIN cambia cada vez que TizenBrew arranca el servicio. "Restablecer" vuelve a `app/config.json`.
+Al guardar, la tele se actualiza sola en unos segundos (si no tiene un panel abierto ni está en reposo). El móvil recuerda el PIN, pero el PIN cambia cada vez que TizenBrew arranca el servicio. "Restablecer" vuelve a `app/config.json`.
 
 ## Personalizar a mano
 
 La configuración por defecto está en `app/config.json`. Lo que guardes desde la tele o el móvil se guarda en la tele y tiene prioridad sobre este archivo.
 
 - `title`: el saludo de arriba.
-- `background`: URL de una imagen de fondo. Si lo dejas vacío, el fondo es negro puro (en OLED, esos píxeles se apagan).
+- `background`: URL directa de una imagen de fondo (que acabe en .jpg, .png…, no la página donde aparece; si no es una imagen, la tele lo avisa abajo a la derecha). Si lo dejas vacío, el fondo es negro puro (en OLED, esos píxeles se apagan).
 - `weather`: ciudad y coordenadas. El tiempo sale de Open-Meteo, que no necesita clave.
 - `theme`: `accent` (color), `size` (`s`, `m` o `l`), `font` (`sans`, `serif` o `mono`) y `anim` (`false` quita las animaciones).
 - `screensaver.minutes`: minutos sin tocar el mando hasta el modo reposo. `0` lo desactiva. En reposo solo queda un reloj tenue que cambia de sitio cada minuto, para evitar marcas en la OLED.

@@ -25,7 +25,7 @@ var os = require('os');
 
 var PORT = 8091;
 // Súbelo cuando cambie la API del servicio: la página avisa si el que corre es más antiguo
-var SERVICE_VERSION = 3;
+var SERVICE_VERSION = 4;
 var CONFIG_FILE = '/home/owner/share/dani-launcher.json';
 var PIN = String(1000 + Math.floor(Math.random() * 9000));
 var defaultConfig = null;
