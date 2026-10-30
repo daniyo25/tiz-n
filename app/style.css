@@ -4,7 +4,7 @@ html, body {
   width: 1920px;
   height: 1080px;
   overflow: hidden;
-  background: #0b0d12;
+  background: #000;
   color: #f2f4f8;
   font-family: "SamsungOne", "Samsung Sharp Sans", Arial, sans-serif;
 }
@@ -12,7 +12,7 @@ html, body {
 #bg {
   position: fixed;
   top: 0; right: 0; bottom: 0; left: 0;
-  background: radial-gradient(circle at 20% 10%, #23304d 0%, #0b0d12 60%);
+  background-color: #000;
   background-size: cover;
   background-position: center;
   z-index: -1;
@@ -85,3 +85,19 @@ footer {
 .dot { display: inline-block; width: 22px; height: 22px; border-radius: 50%; margin-right: 12px; vertical-align: -3px; }
 .red { background: #e33; }
 .green { background: #3c3; }
+.yellow { background: #ec3; }
+
+#applist {
+  display: none;
+  position: fixed;
+  top: 80px; right: 120px; bottom: 140px;
+  width: 760px;
+  padding: 32px 40px;
+  overflow: hidden;
+  background: #111;
+  border-radius: 24px;
+  font-size: 24px;
+  line-height: 1.6;
+  column-count: 1;
+}
+#applist.open { display: block; }

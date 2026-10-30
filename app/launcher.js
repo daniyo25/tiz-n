@@ -7,10 +7,10 @@
 
   var KEY = {
     LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, ENTER: 13,
-    BACK: 10009, RED: 403, GREEN: 404
+    BACK: 10009, RED: 403, GREEN: 404, YELLOW: 405
   };
   var TB_WS_URL = 'ws://127.0.0.1:8081';
-  var TV_API = 'http://127.0.0.1:8001/api/v2/applications/';
+  var SERVICE_URL = 'http://127.0.0.1:8091';
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, Error: 8 };
 
   var WEATHER_CODES = {
@@ -43,7 +43,11 @@
     xhr.onload = function () {
       if (xhr.status >= 200 && xhr.status < 300) {
         try { cb(null, JSON.parse(xhr.responseText)); } catch (e) { cb(e); }
-      } else cb(new Error('HTTP ' + xhr.status));
+      } else {
+        var body = null;
+        try { body = JSON.parse(xhr.responseText); } catch (e) { /* sin cuerpo JSON */ }
+        cb(new Error('HTTP ' + xhr.status), body);
+      }
     };
     xhr.onerror = function () { cb(new Error('Sin conexión')); };
     xhr.send();
@@ -118,21 +122,44 @@
     setStatus('Abriendo ' + name + '…');
     if (window.tizen && tizen.application) {
       try {
-        tizen.application.launch(appId, null, function () { fallbackLaunch(appId, name); });
+        tizen.application.launch(appId, null, function () { serviceLaunch(appId, name, true); });
         return;
-      } catch (e) { /* sin permisos en esta página: usamos la API local */ }
+      } catch (e) { /* esta página no tiene permiso: lo hace nuestro servicio */ }
     }
-    fallbackLaunch(appId, name);
+    serviceLaunch(appId, name, true);
   }
 
-  function fallbackLaunch(appId, name) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', TV_API + appId, true);
-    xhr.onload = function () {
-      if (xhr.status >= 300) setStatus('No se pudo abrir ' + name + ' (' + xhr.status + ')');
-    };
-    xhr.onerror = function () { setStatus('No se pudo abrir ' + name); };
-    xhr.send();
+  // El servicio (service/service.js) corre dentro de TizenBrew con acceso a tizen.application
+  function serviceLaunch(appId, name, retry) {
+    getJSON(SERVICE_URL + '/launch?id=' + encodeURIComponent(appId), function (err, data) {
+      if (!err) return;
+      // Recién abierto el launcher, TizenBrew puede estar aún arrancando el servicio
+      if (retry && /Sin conexión/.test(err.message)) {
+        setTimeout(function () { serviceLaunch(appId, name, false); }, 1500);
+        return;
+      }
+      setStatus('No se pudo abrir ' + name + ' (' + (data && data.error || err.message) + ')');
+    });
+  }
+
+  // Botón amarillo: lista de apps instaladas con su ID, para rellenar config.json
+  function toggleAppList() {
+    var panel = $('applist');
+    if (panel.className === 'open') { panel.className = ''; return; }
+    panel.className = 'open';
+    panel.textContent = 'Cargando apps instaladas…';
+    getJSON(SERVICE_URL + '/apps', function (err, data) {
+      if (err || !data.apps) {
+        panel.textContent = 'No se pudo obtener la lista (' + (data && data.error || err.message) + ')';
+        return;
+      }
+      panel.innerHTML = '';
+      data.apps.forEach(function (a) {
+        var row = document.createElement('div');
+        row.textContent = a.name + '  ·  ' + a.id;
+        panel.appendChild(row);
+      });
+    });
   }
 
   // Lanzar otros módulos de TizenBrew a través de su servicio
@@ -200,7 +227,11 @@
       case KEY.GREEN:
         document.body.className = document.body.className.indexOf('compact') !== -1 ? '' : 'compact';
         break;
-      case KEY.BACK: history.back(); break;
+      case KEY.YELLOW: toggleAppList(); break;
+      case KEY.BACK:
+        if ($('applist').className === 'open') $('applist').className = '';
+        else history.back();
+        break;
       default: return;
     }
     e.preventDefault();
