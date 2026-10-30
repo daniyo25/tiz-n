@@ -41,6 +41,12 @@
   var ws = null;
   var pendingModule = null;
   var serviceInfo = null;
+  // Zonas del mando: menú de arriba, filas de accesos y columna de widgets
+  var zone = 'rows';
+  var topSel = 0;
+  var sideSel = 0;
+  var newsItems = [];   // [{ title, text, date, image }]
+  var BOOT = Date.now(); // para pedir los logos de nuevo cada vez que se abre el módulo
 
   function $(id) { return document.getElementById(id); }
 
@@ -79,6 +85,7 @@
     cfg.theme = cfg.theme || {};
     cfg.screensaver = cfg.screensaver || { minutes: 5 };
     cfg.widgets = cfg.widgets || {};
+    delete cfg.widgets.calendar;
     return cfg;
   }
 
@@ -154,6 +161,7 @@
       var cw = data.current_weather;
       $('weather').textContent = w.city + ' · ' + Math.round(cw.temperature) + '°C ' + (WEATHER_CODES[cw.weathercode] || '');
       if (config.widgets.forecast && data.daily) renderForecast(data.daily);
+      buildSide();
     });
   }
 
@@ -186,33 +194,6 @@
     box.appendChild(wrap);
   }
 
-  function renderCalendar() {
-    if (!config.widgets.calendar) { $('w-calendar').className = 'widget hidden'; return; }
-    var now = new Date();
-    var month = now.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-    var box = widget('w-calendar', month);
-    var grid = document.createElement('div');
-    grid.className = 'cal';
-    ['L', 'M', 'X', 'J', 'V', 'S', 'D'].forEach(function (d) {
-      var c = document.createElement('div');
-      c.className = 'wd';
-      c.textContent = d;
-      grid.appendChild(c);
-    });
-    var first = new Date(now.getFullYear(), now.getMonth(), 1);
-    var offset = (first.getDay() + 6) % 7; // semana empieza en lunes
-    for (var i = 0; i < 42; i++) {
-      var day = new Date(first.getFullYear(), first.getMonth(), 1 - offset + i);
-      if (i % 7 === 0 && i > 0 && day.getMonth() !== now.getMonth()) break;
-      var cell = document.createElement('div');
-      cell.textContent = day.getDate();
-      if (day.getMonth() !== now.getMonth()) cell.className = 'other';
-      else if (day.getDate() === now.getDate()) cell.className = 'today';
-      grid.appendChild(cell);
-    }
-    box.appendChild(grid);
-  }
-
   function proxyUrl(url, token) {
     return SERVICE_URL + '/proxy?url=' + encodeURIComponent(url) + (token ? '&token=' + encodeURIComponent(token) : '');
   }
@@ -223,18 +204,58 @@
     request('GET', proxyUrl(n.url), undefined, function (err, text) {
       if (err || !text) return;
       var doc = new DOMParser().parseFromString(text, 'text/xml');
-      var items = doc.querySelectorAll('item > title, entry > title');
+      var items = doc.querySelectorAll('item, entry');
       if (!items.length) return;
+      newsItems = [];
+      for (var i = 0; i < items.length && i < 25; i++) newsItems.push(parseNewsItem(items[i]));
       var box = widget('w-news', n.title || 'Noticias');
       var list = document.createElement('ul');
       list.className = 'news';
-      for (var i = 0; i < items.length && i < 4; i++) {
+      newsItems.forEach(function (item) {
         var li = document.createElement('li');
-        li.textContent = items[i].textContent.trim();
+        var t = document.createElement('span');
+        t.textContent = item.title;
+        li.appendChild(t);
         list.appendChild(li);
-      }
+      });
       box.appendChild(list);
+      buildSide();
     }, true);
+  }
+
+  function childText(node, names) {
+    for (var i = 0; i < node.childNodes.length; i++) {
+      var c = node.childNodes[i];
+      if (names.indexOf(c.nodeName) !== -1 && c.textContent) return c.textContent.trim();
+    }
+    return '';
+  }
+
+  // Quita las etiquetas HTML que traen las descripciones de los RSS
+  function plainText(html) {
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    var imgs = div.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) imgs[i].parentNode.removeChild(imgs[i]);
+    return (div.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function parseNewsItem(node) {
+    var image = '';
+    for (var i = 0; i < node.childNodes.length && !image; i++) {
+      var c = node.childNodes[i];
+      if (!c.getAttribute) continue;
+      var type = c.getAttribute('type') || c.getAttribute('medium') || '';
+      if ((c.nodeName === 'enclosure' || c.nodeName === 'media:content' || c.nodeName === 'media:thumbnail') &&
+          (!type || type.indexOf('image') === 0) && c.getAttribute('url')) image = c.getAttribute('url');
+    }
+    var date = childText(node, ['pubDate', 'updated', 'published', 'dc:date']);
+    return {
+      title: childText(node, ['title']),
+      text: plainText(childText(node, ['description', 'content:encoded', 'summary', 'content', 'media:description'])),
+      date: date ? new Date(date) : null,
+      image: image
+    };
   }
 
   function loadHomeAssistant() {
@@ -272,7 +293,7 @@
 
   function iconUrl(t) {
     if (t.icon) return t.icon;
-    if (t.type === 'tvapp' && t.id) return SERVICE_URL + '/icon?id=' + encodeURIComponent(t.id);
+    if (t.type === 'tvapp' && t.id) return SERVICE_URL + '/icon?id=' + encodeURIComponent(t.id) + '&v=' + BOOT;
     return null;
   }
 
@@ -340,7 +361,7 @@
 
   function setFocus(r, c) {
     if (!rowEls.length) return;
-    var prev = document.querySelectorAll('.focused, .active');
+    var prev = document.querySelectorAll('.tile.focused, .row.active');
     for (var i = 0; i < prev.length; i++) prev[i].className = prev[i].className.replace(/ (focused|active)/g, '');
     focusRow = r;
     focusCol[r] = c;
@@ -365,10 +386,12 @@
     if (!rowEls.length) return;
     if (dy) {
       var r = focusRow + dy;
-      if (r < 0 || r >= rowEls.length) return;
+      if (r < 0) return setZone('top');
+      if (r >= rowEls.length) return;
       setFocus(r, Math.min(focusCol[r] || 0, rowEls[r].tiles.length - 1));
     } else {
       var c = focusCol[focusRow] + dx;
+      if (c >= rowEls[focusRow].tiles.length && sideItems().length) return setZone('side');
       if (c < 0 || c >= rowEls[focusRow].tiles.length) return;
       setFocus(focusRow, c);
     }
@@ -727,6 +750,236 @@
   function closePanels() {
     $('applist').className = 'panel';
     $('settings').className = 'panel';
+    $('weatherPanel').className = 'panel';
+    $('newsPanel').className = 'panel';
+  }
+
+  // ---------- Menú de arriba y columna de widgets ----------
+
+  var TOP_ITEMS = [
+    { id: 'm-apps', action: function () { toggleAppList(); } },
+    { id: 'm-settings', action: function () { toggleSettings(); } },
+    { id: 'm-reload', action: function () { location.reload(); } },
+    { id: 'weather', action: function () { openWeather(); } }
+  ];
+
+  function clearSel() {
+    var prev = document.querySelectorAll('.nav-sel');
+    for (var i = 0; i < prev.length; i++) prev[i].className = prev[i].className.replace(/ ?nav-sel/g, '');
+  }
+
+  function setZone(z) {
+    zone = z;
+    clearSel();
+    var prev = document.querySelectorAll('.tile.focused, .row.active');
+    for (var i = 0; i < prev.length; i++) prev[i].className = prev[i].className.replace(/ (focused|active)/g, '');
+    if (z === 'rows') return setFocus(focusRow, focusCol[focusRow] || 0);
+    if (z === 'top') $(TOP_ITEMS[topSel].id).className += ' nav-sel';
+    if (z === 'side') showSideSel();
+  }
+
+  function topKey(code) {
+    if (code === KEY.DOWN) return setZone('rows');
+    if (code === KEY.ENTER) return TOP_ITEMS[topSel].action();
+    if (code === KEY.UP) return;
+    var i = topSel + (code === KEY.RIGHT ? 1 : -1);
+    if (i < 0 || i >= TOP_ITEMS.length) return;
+    topSel = i;
+    setZone('top');
+  }
+
+  // Elementos de la columna derecha que se pueden elegir con el mando
+  function sideItems() {
+    var items = [];
+    if ($('w-forecast').className.indexOf('hidden') === -1) items.push({ el: $('w-forecast'), action: openWeather });
+    var lis = document.querySelectorAll('#w-news li');
+    for (var i = 0; i < lis.length; i++) items.push({ el: lis[i], news: i, action: (function (n) { return function () { openNews(n); }; })(i) });
+    return items;
+  }
+
+  function buildSide() {
+    if (zone !== 'side') return;
+    var n = sideItems().length;
+    if (!n) return setZone('rows');
+    if (sideSel >= n) sideSel = n - 1;
+    showSideSel();
+  }
+
+  function showSideSel() {
+    clearSel();
+    var items = sideItems();
+    var it = items[sideSel];
+    if (!it) return;
+    it.el.className += ' nav-sel';
+    // Desplaza la lista de noticias para que la elegida quede a la vista
+    var list = document.querySelector('#w-news .news');
+    if (list && it.news !== undefined) {
+      // .news tiene position: relative, así que offsetTop ya es relativo a la lista
+      var li = it.el;
+      if (li.offsetTop < list.scrollTop) list.scrollTop = li.offsetTop;
+      else if (li.offsetTop + li.offsetHeight > list.scrollTop + list.clientHeight) {
+        list.scrollTop = li.offsetTop + li.offsetHeight - list.clientHeight;
+      }
+    } else if (list && it.news === undefined) list.scrollTop = 0;
+  }
+
+  function sideKey(code) {
+    var items = sideItems();
+    if (code === KEY.LEFT) return setZone('rows');
+    if (code === KEY.ENTER) return items[sideSel] && items[sideSel].action();
+    if (code === KEY.RIGHT) return;
+    var i = sideSel + (code === KEY.DOWN ? 1 : -1);
+    if (i < 0) return setZone('top');
+    if (i >= items.length) return;
+    sideSel = i;
+    showSideSel();
+  }
+
+  // ---------- Noticia completa ----------
+
+  var newsSel = 0;
+
+  function openNews(i) {
+    if (i < 0 || i >= newsItems.length) return;
+    newsSel = i;
+    var item = newsItems[i];
+    var panel = $('newsPanel');
+    closePanels();
+    panel.innerHTML = '';
+    var body = document.createElement('div');
+    body.id = 'newsBody';
+    if (item.image) {
+      var img = document.createElement('img');
+      img.src = item.image;
+      img.onerror = function () { if (img.parentNode) img.parentNode.removeChild(img); };
+      body.appendChild(img);
+    }
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = ((config.widgets.news && config.widgets.news.title) || 'Noticias') +
+      (item.date && !isNaN(item.date) ? ' · ' + item.date.toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '');
+    var h = document.createElement('h2');
+    h.textContent = item.title;
+    var p = document.createElement('p');
+    p.textContent = item.text || 'Esta noticia no trae resumen.';
+    body.appendChild(meta);
+    body.appendChild(h);
+    body.appendChild(p);
+    panel.appendChild(body);
+    var hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = (i + 1) + ' de ' + newsItems.length + ' · ←→ otra noticia · ↑↓ desplazar · Volver para cerrar';
+    panel.appendChild(hint);
+    panel.className = 'panel open';
+    // Lleva también la selección de la columna a esa noticia
+    var items = sideItems();
+    for (var k = 0; k < items.length; k++) if (items[k].news === i) sideSel = k;
+    if (zone === 'side') showSideSel();
+  }
+
+  // ---------- El tiempo, con más detalle ----------
+
+  function windDir(deg) {
+    return ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(deg / 45) % 8];
+  }
+
+  function openWeather() {
+    var w = config.weather;
+    if (!w) return setStatus('Elige una ciudad en el editor del móvil');
+    var panel = $('weatherPanel');
+    closePanels();
+    panel.innerHTML = '<h2></h2><p class="hint">Cargando…</p>';
+    panel.children[0].textContent = 'El tiempo en ' + w.city;
+    panel.className = 'panel open';
+    var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + w.latitude + '&longitude=' + w.longitude +
+      '&timezone=auto&forecast_days=7' +
+      '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,precipitation,pressure_msl,cloud_cover' +
+      '&hourly=temperature_2m,precipitation_probability,weather_code' +
+      '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max,wind_speed_10m_max';
+    getJSON(url, function (err, d) {
+      if (!isOpen('weatherPanel')) return;
+      if (err || !d || !d.current) { panel.children[1].textContent = 'No se pudo cargar el tiempo'; return; }
+      renderWeatherPanel(panel, w, d);
+    });
+  }
+
+  function cell(parent, cls, text) {
+    var c = document.createElement('div');
+    c.className = cls;
+    c.textContent = text;
+    parent.appendChild(c);
+    return c;
+  }
+
+  function renderWeatherPanel(panel, w, d) {
+    var c = d.current, day = d.daily;
+    panel.innerHTML = '';
+    var top = document.createElement('div');
+    top.className = 'wx-now';
+    var left = document.createElement('div');
+    cell(left, 'wx-city', w.city);
+    cell(left, 'wx-temp', Math.round(c.temperature_2m) + '°');
+    cell(left, 'wx-desc', (WEATHER_CODES[c.weather_code] || '') + ' · Máx. ' + Math.round(day.temperature_2m_max[0]) + '° Mín. ' + Math.round(day.temperature_2m_min[0]) + '°');
+    top.appendChild(left);
+    var facts = document.createElement('div');
+    facts.className = 'wx-facts';
+    [
+      ['Sensación', Math.round(c.apparent_temperature) + '°'],
+      ['Humedad', Math.round(c.relative_humidity_2m) + ' %'],
+      ['Viento', Math.round(c.wind_speed_10m) + ' km/h ' + windDir(c.wind_direction_10m)],
+      ['Lluvia hoy', (day.precipitation_sum[0] || 0).toFixed(1) + ' mm · ' + (day.precipitation_probability_max[0] || 0) + ' %'],
+      ['Índice UV', Math.round(day.uv_index_max[0] || 0)],
+      ['Nubes', Math.round(c.cloud_cover) + ' %'],
+      ['Presión', Math.round(c.pressure_msl) + ' hPa'],
+      ['Sol', day.sunrise[0].slice(11, 16) + ' – ' + day.sunset[0].slice(11, 16)]
+    ].forEach(function (f) {
+      var box = document.createElement('div');
+      cell(box, 'k', f[0]);
+      cell(box, 'v', '' + f[1]);
+      facts.appendChild(box);
+    });
+    top.appendChild(facts);
+    panel.appendChild(top);
+
+    // Próximas 24 horas, desde la hora actual
+    cell(panel, 'wx-h', 'Próximas horas');
+    var hours = document.createElement('div');
+    hours.className = 'wx-hours';
+    var now = c.time.slice(0, 13);
+    var start = 0;
+    for (var i = 0; i < d.hourly.time.length; i++) if (d.hourly.time[i].slice(0, 13) === now) { start = i; break; }
+    for (var j = start; j < start + 24 && j < d.hourly.time.length; j += 2) {
+      var h = document.createElement('div');
+      cell(h, 'k', j === start ? 'Ahora' : d.hourly.time[j].slice(11, 16));
+      cell(h, 'v', Math.round(d.hourly.temperature_2m[j]) + '°');
+      cell(h, 's', (WEATHER_CODES[d.hourly.weather_code[j]] || '').replace('Parcialmente nuboso', 'Nubes y claros'));
+      cell(h, 'p', (d.hourly.precipitation_probability[j] || 0) + ' %');
+      hours.appendChild(h);
+    }
+    panel.appendChild(hours);
+
+    // Siete días con barra de temperaturas
+    cell(panel, 'wx-h', 'Próximos 7 días');
+    var days = document.createElement('div');
+    days.className = 'wx-days';
+    var lo = Math.min.apply(null, day.temperature_2m_min), hi = Math.max.apply(null, day.temperature_2m_max);
+    for (var k = 0; k < day.time.length; k++) {
+      var row = document.createElement('div');
+      var name = k === 0 ? 'Hoy' : new Date(day.time[k] + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long' });
+      cell(row, 'd', name.charAt(0).toUpperCase() + name.slice(1));
+      cell(row, 's', WEATHER_CODES[day.weather_code[k]] || '');
+      cell(row, 'p', (day.precipitation_probability_max[k] || 0) + ' %');
+      cell(row, 'lo', Math.round(day.temperature_2m_min[k]) + '°');
+      var bar = cell(row, 'bar', '');
+      var fill = cell(bar, 'fill', '');
+      var span = Math.max(1, hi - lo);
+      fill.style.left = ((day.temperature_2m_min[k] - lo) / span * 100) + '%';
+      fill.style.width = Math.max(4, (day.temperature_2m_max[k] - day.temperature_2m_min[k]) / span * 100) + '%';
+      cell(row, 'hi', Math.round(day.temperature_2m_max[k]) + '°');
+      days.appendChild(row);
+    }
+    panel.appendChild(days);
+    cell(panel, 'hint', 'Datos de Open-Meteo · Volver para cerrar');
   }
 
   // ---------- Modo reposo OLED ----------
@@ -778,7 +1031,7 @@
       e.preventDefault();
       return;
     }
-    if (code === KEY.BACK && (isOpen('applist') || isOpen('settings'))) {
+    if (code === KEY.BACK && (isOpen('applist') || isOpen('settings') || isOpen('weatherPanel') || isOpen('newsPanel'))) {
       closePanels();
       e.preventDefault();
       return;
@@ -790,6 +1043,23 @@
     }
     if (isOpen('applist') && code !== KEY.YELLOW) {
       appListKey(code);
+      e.preventDefault();
+      return;
+    }
+    if (isOpen('newsPanel')) {
+      if (code === KEY.UP || code === KEY.DOWN) $('newsBody').scrollTop += code === KEY.DOWN ? 160 : -160;
+      if (code === KEY.LEFT || code === KEY.RIGHT) openNews(newsSel + (code === KEY.RIGHT ? 1 : -1));
+      if (code === KEY.ENTER) closePanels();
+      e.preventDefault();
+      return;
+    }
+    if (isOpen('weatherPanel')) {
+      if (code === KEY.ENTER) closePanels();
+      e.preventDefault();
+      return;
+    }
+    if (zone !== 'rows' && (code === KEY.LEFT || code === KEY.RIGHT || code === KEY.UP || code === KEY.DOWN || code === KEY.ENTER)) {
+      if (zone === 'top') topKey(code); else sideKey(code);
       e.preventDefault();
       return;
     }
@@ -862,8 +1132,6 @@
     setInterval(tickClock, 10000);
     loadWeather();
     setInterval(loadWeather, 30 * 60 * 1000);
-    renderCalendar();
-    setInterval(renderCalendar, 60 * 60 * 1000);
     loadNews();
     setInterval(loadNews, 30 * 60 * 1000);
     loadHomeAssistant();

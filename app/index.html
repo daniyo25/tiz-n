@@ -13,6 +13,11 @@
       <h1 id="title">Hola</h1>
       <p id="date"></p>
     </div>
+    <nav id="menu">
+      <span id="m-apps" class="pill">Apps instaladas</span>
+      <span id="m-settings" class="pill">Ajustes</span>
+      <span id="m-reload" class="pill">Recargar</span>
+    </nav>
     <div class="right">
       <div id="clock">--:--</div>
       <div id="weather"></div>
@@ -23,7 +28,6 @@
     <main id="rows"><div id="rowsInner"></div></main>
     <aside id="widgets">
       <section id="w-forecast" class="widget hidden"></section>
-      <section id="w-calendar" class="widget hidden"></section>
       <section id="w-news" class="widget hidden"></section>
       <section id="w-ha" class="widget hidden"></section>
     </aside>
@@ -31,13 +35,12 @@
 
   <div id="applist" class="panel"></div>
   <div id="settings" class="panel"></div>
+  <div id="weatherPanel" class="panel"></div>
+  <div id="newsPanel" class="panel"></div>
   <div id="saver"><div id="saverClock"></div></div>
 
   <footer>
-    <span><b class="dot red"></b>Recargar</span>
-    <span><b class="dot green"></b>Tamaño</span>
-    <span><b class="dot yellow"></b>Apps instaladas</span>
-    <span><b class="dot blue"></b>Ajustes</span>
+    <span class="hint">↑ menú · → noticias y tiempo</span>
     <span id="status"></span>
   </footer>
   <script src="launcher.js"></script>

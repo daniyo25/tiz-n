@@ -19,12 +19,14 @@ jsDelivr guarda en caché las ramas hasta 12 horas. Para probar una versión al 
 | Tecla | Acción |
 | --- | --- |
 | Flechas | Moverse por los accesos (izquierda/derecha dentro de una fila, arriba/abajo entre filas) |
-| OK | Abrir |
-| Rojo | Recargar |
-| Verde | Cambiar el tamaño de los accesos |
-| Amarillo | Lista de apps instaladas. OK sobre una app para añadirla a una fila, moverla o quitarla. Izquierda y derecha saltan de 10 en 10 |
-| Azul | Ajustes: estilo (Apple TV o clásico), color, tamaño, tipografía, animaciones, modo reposo, autoarranque y dirección del editor |
+| Arriba desde la primera fila | Menú de arriba: Apps instaladas, Ajustes, Recargar y el tiempo |
+| Derecha desde el final de una fila | Columna de widgets: previsión y noticias, con arriba/abajo |
+| OK | Abrir el acceso, la opción del menú, el tiempo completo o la noticia |
 | Volver | Cerrar el panel abierto o volver a TizenBrew |
+
+En la noticia abierta, izquierda/derecha pasan a la siguiente y arriba/abajo desplazan el texto. La lista de apps instaladas permite añadir una app a una fila, moverla o quitarla; izquierda y derecha saltan de 10 en 10. Ajustes tiene estilo (Apple TV o clásico), color, tamaño, tipografía, animaciones, modo reposo, autoarranque y la dirección del editor.
+
+Los botones de colores siguen funcionando como atajos (rojo recargar, verde tamaño, amarillo apps, azul ajustes), pero no hacen falta.
 
 ## Editar desde el móvil
 
@@ -48,7 +50,6 @@ La configuración por defecto está en `app/config.json`. Lo que guardes desde l
 - `autolaunch`: si el launcher se abre al iniciar TizenBrew.
 - `widgets`:
   - `forecast`: previsión de los próximos tres días.
-  - `calendar`: calendario del mes.
   - `news`: titulares de un feed RSS (`title` y `url`).
   - `homeassistant`: `url` de tu Home Assistant, un token de acceso de larga duración (`token`) y las `entities` que quieres ver, por ejemplo `["sensor.salon_temperatura"]`.
 - `rows`: filas con `title` y `tiles`. Cada acceso tiene `name`, `color`, opcionalmente `icon` (URL de un logo) y uno de estos tipos:
