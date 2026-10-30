@@ -89,6 +89,40 @@
   // ---------- Configuración ----------
 
   // Las primeras versiones tenían una lista plana de "tiles" en vez de filas
+  // Logos horizontales de las apps más comunes (la tele no trae ninguno), de Wikimedia Commons.
+  // Se buscan por el ID de la app o del módulo, o por el nombre del acceso; un logo o banner
+  // propio del acceso tiene prioridad. white: el logo es oscuro y se pinta en blanco.
+  var WM = 'https://upload.wikimedia.org/wikipedia/commons/thumb/';
+  var BRANDS = [
+    { url: WM + '0/08/Netflix_2015_logo.svg/960px-Netflix_2015_logo.svg.png', bg: '#000000', ids: ['org.tizen.netflix-app'], names: ['netflix'] },
+    { url: WM + '9/90/Prime_Video_logo_%282024%29.svg/960px-Prime_Video_logo_%282024%29.svg.png', bg: '#0f171e', ids: ['org.tizen.primevideo', 'org.tizen.primevideo-dummy'], names: ['prime video', 'amazon prime video'] },
+    { url: WM + '3/3e/Disney%2B_logo.svg/960px-Disney%2B_logo.svg.png', bg: '#0e1a5a', white: true, ids: ['MCmYXNxgcu.DisneyPlus'], names: ['disney+', 'disney plus'] },
+    { url: WM + 'f/f7/Apple_TV_logo.svg/960px-Apple_TV_logo.svg.png', bg: '#000000', white: true, ids: ['com.samsung.tv.aria-video', 'com.samsung.tv.aria-dummy'], names: ['apple tv', 'apple tv+'] },
+    { url: WM + '5/54/YouTube_dark_logo_2017.svg/960px-YouTube_dark_logo_2017.svg.png', bg: '#0f0f0f', ids: ['com.samsung.tv.cobalt-yt', '9Ur5IzDKqV.TizenYouTube', 'gh/reisxd/TizenTube'], names: ['youtube', 'tizentube'] },
+    { url: WM + '2/26/Spotify_logo_with_text.svg/960px-Spotify_logo_with_text.svg.png', bg: '#121212', ids: ['rJeHak5zRg.Spotify'], names: ['spotify', 'spotify - music and podcasts'] },
+    { url: WM + 'f/f7/Jellyfin_-_banner-dark.svg/960px-Jellyfin_-_banner-dark.svg.png', bg: '#000b25', ids: ['npm/@glenlowland/jellyfin-tizen'], names: ['jellyfin'] },
+    { url: WM + '7/7e/HBO_Max_May_2025_%28Horizontal%29.svg/960px-HBO_Max_May_2025_%28Horizontal%29.svg.png', bg: '#002be7', white: true, ids: [], names: ['max', 'hbo max'] },
+    { url: WM + '1/1d/Movistar_Plus%2B_2022_logo.svg/960px-Movistar_Plus%2B_2022_logo.svg.png', bg: '#019df4', white: true, ids: [], names: ['movistar plus+', 'movistar+', 'movistar plus'] },
+    { url: WM + '0/0b/Twitch_Unextruded_Wordmark_Logo_White.svg/960px-Twitch_Unextruded_Wordmark_Logo_White.svg.png', bg: '#9146ff', ids: [], names: ['twitch'] },
+    { url: WM + '4/44/Plex_logo_2022_full-color-on-black.svg/960px-Plex_logo_2022_full-color-on-black.svg.png', bg: '#1f1f1f', ids: [], names: ['plex'] },
+    { url: WM + '7/71/DAZN_logo.svg/960px-DAZN_logo.svg.png', bg: '#000000', ids: [], names: ['dazn'] },
+    { url: WM + 'd/dd/Logotipo_Filmin_2023.png/960px-Logotipo_Filmin_2023.png', bg: '#ffffff', ids: [], names: ['filmin'] }
+  ];
+
+  function knownLogo(t) {
+    var name = (t.name || '').toLowerCase().trim();
+    for (var i = 0; i < BRANDS.length; i++) {
+      if (BRANDS[i].ids.indexOf(t.id) !== -1 || BRANDS[i].names.indexOf(name) !== -1) return BRANDS[i];
+    }
+    return null;
+  }
+
+  var OLD_IDS = {
+    '3201907018807': 'org.tizen.netflix-app', '3201910019365': 'org.tizen.primevideo',
+    '3201901017640': 'MCmYXNxgcu.DisneyPlus', '3201807016597': 'com.samsung.tv.aria-video',
+    '111299001912': 'com.samsung.tv.cobalt-yt', '3201606009684': 'rJeHak5zRg.Spotify'
+  };
+
   function normalize(cfg) {
     if (!cfg.rows) cfg.rows = [{ title: 'Apps', tiles: cfg.tiles || [] }];
     delete cfg.tiles;
@@ -96,6 +130,11 @@
     cfg.screensaver = cfg.screensaver || { minutes: 5 };
     cfg.widgets = cfg.widgets || {};
     delete cfg.widgets.calendar;
+    // Los primeros accesos usaban el ID de la tienda de Samsung; en la S95B el de Apple TV y el de
+    // Spotify no abrían nada y con ninguno se encontraba el icono. Se cambian por el ID de la app.
+    cfg.rows.forEach(function (row) {
+      (row.tiles || []).forEach(function (t) { if (t.type === 'tvapp' && OLD_IDS[t.id]) t.id = OLD_IDS[t.id]; });
+    });
     return cfg;
   }
 
@@ -394,7 +433,7 @@
     if ($('saver').className === 'on') stopSaver();
     if (item.kind === 'youtube') {
       setStatus('Abriendo en YouTube…');
-      return getJSON(SERVICE_URL + '/launch?id=111299001912&payload=' + encodeURIComponent('v=' + item.video), function () {});
+      return getJSON(SERVICE_URL + '/launch?id=com.samsung.tv.cobalt-yt&payload=' + encodeURIComponent('v=' + item.video), function () {});
     }
     if (item.kind === 'web') return setStatus('Solo se pueden enviar fotos, vídeos o enlaces de YouTube');
     closePanels();
@@ -473,7 +512,27 @@
     el.className = 'tile';
     el.style.background = t.color || '#2a3550';
     var url = iconUrl(t);
-    if (t.banner) {
+    var known = !t.banner && !t.icon && t.logo !== false && knownLogo(t);
+    if (known) {
+      // Logo horizontal de la marca sobre su color: llena la tarjeta sin estirarse
+      el.style.background = known.bg;
+      el.className += ' wide brand' + (known.white ? ' white' : '');
+      var logo = document.createElement('img');
+      logo.onerror = function () {
+        // Sin internet o sin el logo: se vuelve al icono de la app
+        if (logo.parentNode) el.removeChild(logo);
+        el.className = el.className.replace(/ wide brand( white)?/, '');
+        el.style.background = t.color || '#2a3550';
+        if (url) {
+          var img = document.createElement('img');
+          img.onerror = function () { if (img.parentNode) el.removeChild(img); el.className += ' noicon'; };
+          img.src = url;
+          el.insertBefore(img, el.firstChild);
+        } else el.className += ' noicon';
+      };
+      logo.src = known.url;
+      el.appendChild(logo);
+    } else if (t.banner) {
       // Imagen panorámica propia: cubre la tarjeta entera
       el.style.backgroundImage = 'url("' + t.banner.replace(/"/g, '%22') + '")';
       el.style.backgroundSize = 'cover';
