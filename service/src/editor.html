@@ -26,15 +26,27 @@
   button.danger { color: var(--danger); }
   .bar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.92); border-top: 1px solid var(--line); padding: 12px 16px; display: flex; gap: 8px; justify-content: center; }
   .bar button { flex: 1; max-width: 300px; }
-  #msg { position: fixed; left: 16px; right: 16px; bottom: 76px; text-align: center; font-size: 14px; }
+  #msg { position: fixed; left: 16px; right: 16px; bottom: 76px; text-align: center; font-size: 14px; background: rgba(0,0,0,.85); border-radius: 10px; padding: 0 8px; }
+  #msg:empty { display: none; }
   .pin { display: flex; gap: 8px; }
   .pin input { flex: 1; letter-spacing: 6px; text-align: center; font-size: 22px; }
+  #apps { max-height: 420px; overflow-y: auto; margin-top: 10px; }
+  .app { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .app:first-child { border-top: 0; }
+  .app img, .app .noimg { width: 44px; height: 44px; border-radius: 10px; object-fit: contain; background: #0c0d10; flex: none; }
+  .app .info { flex: 1; min-width: 0; }
+  .app .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .app .where { font-size: 13px; color: var(--muted); }
+  .app button { flex: none; }
+  .app button.added { color: #4ade80; }
+  .two { display: flex; gap: 8px; }
+  .two > * { flex: 1; }
 </style>
 </head>
 <body>
 <main>
   <h1>Dani Launcher</h1>
-  <p class="muted">Edita los accesos de la tele. Los cambios se ven al pulsar Guardar; en la tele, pulsa el botón rojo para recargar.</p>
+  <p class="muted">Edita los accesos de la tele. Al guardar, la tele se actualiza sola en unos segundos.</p>
 
   <div class="card">
     <h2>PIN</h2>
@@ -53,6 +65,16 @@
     <p class="muted" id="coords"></p>
   </div>
 
+  <div class="card">
+    <h2>Apps instaladas</h2>
+    <p class="muted">Pulsa Añadir y la app aparece en la tele en unos segundos.</p>
+    <div class="two">
+      <div><label for="appFilter">Buscar</label><input id="appFilter" placeholder="Nombre…"></div>
+      <div><label for="appRow">Añadir a la fila</label><select id="appRow"></select></div>
+    </div>
+    <div id="apps"><p class="muted">Cargando…</p></div>
+  </div>
+
   <div id="rows"></div>
   <button id="addRow">+ Añadir fila</button>
 </main>
@@ -68,6 +90,7 @@
 (function () {
   var cfg = null;
   var apps = [];
+  var appsError = '';
 
   function $(id) { return document.getElementById(id); }
   function msg(text, bad) { $('msg').textContent = text; $('msg').style.color = bad ? '#ff5c5c' : '#9aa0ab'; }
@@ -162,7 +185,86 @@
       ]));
       rows.appendChild(card);
     });
+    renderApps();
   }
+
+  // ---------- Apps instaladas ----------
+
+  // Fila y posición de una app de la tele en el launcher, o null
+  function findApp(id) {
+    for (var r = 0; r < cfg.rows.length; r++) {
+      for (var i = 0; i < cfg.rows[r].tiles.length; i++) {
+        var t = cfg.rows[r].tiles[i];
+        if ((t.type || 'tvapp') === 'tvapp' && t.id === id) return { row: r, index: i };
+      }
+    }
+    return null;
+  }
+
+  function renderRowSelect() {
+    var sel = $('appRow');
+    var prev = sel.value;
+    sel.innerHTML = '';
+    cfg.rows.forEach(function (row, r) { sel.appendChild(el('option', { value: String(r), text: row.title || 'Fila ' + (r + 1) })); });
+    sel.appendChild(el('option', { value: 'new', text: '+ Nueva fila «Mis apps»' }));
+    sel.value = prev && sel.querySelector('option[value="' + prev + '"]') ? prev : (cfg.rows.length ? '0' : 'new');
+  }
+
+  function addApp(a) {
+    var target = $('appRow').value;
+    var row;
+    if (target === 'new') {
+      row = { title: 'Mis apps', tiles: [] };
+      cfg.rows.push(row);
+    } else {
+      row = cfg.rows[+target];
+    }
+    row.tiles.push({ name: a.name, type: 'tvapp', id: a.id, color: '#1c1f26' });
+    render();
+    save('«' + a.name + '» añadida a «' + row.title + '»');
+  }
+
+  function removeApp(a, pos) {
+    cfg.rows[pos.row].tiles.splice(pos.index, 1);
+    render();
+    save('«' + a.name + '» quitada del launcher');
+  }
+
+  function renderApps() {
+    if (!cfg) return;
+    renderRowSelect();
+    var box = $('apps');
+    if (!apps.length) {
+      box.innerHTML = '';
+      box.appendChild(el('p', { 'class': 'muted', text: appsError || 'Cargando…' }));
+      return;
+    }
+    var q = $('appFilter').value.trim().toLowerCase();
+    box.innerHTML = '';
+    apps.filter(function (a) { return !q || a.name.toLowerCase().indexOf(q) !== -1; }).forEach(function (a) {
+      var pos = findApp(a.id);
+      var icon = el('img', { src: '/icon?id=' + encodeURIComponent(a.id), alt: '' });
+      icon.onerror = function () { icon.replaceWith(el('div', { 'class': 'noimg' })); };
+      box.appendChild(el('div', { 'class': 'app' }, [
+        icon,
+        el('div', { 'class': 'info' }, [
+          el('div', { 'class': 'name', text: a.name }),
+          el('div', { 'class': 'where', text: pos ? 'En «' + cfg.rows[pos.row].title + '»' : a.id })
+        ]),
+        pos
+          ? el('button', { 'class': 'added', text: '✓ Quitar', onclick: function () { removeApp(a, pos); } })
+          : el('button', { text: 'Añadir', onclick: function () { addApp(a); } })
+      ]));
+    });
+  }
+
+  $('appFilter').addEventListener('input', renderApps);
+
+  // El PIN se recuerda en este móvil
+  try { $('pin').value = localStorage.getItem('daniLauncherPin') || ''; } catch (e) { /* sin almacenamiento */ }
+  $('pin').addEventListener('input', function () {
+    try { localStorage.setItem('daniLauncherPin', $('pin').value); } catch (e) { /* sin almacenamiento */ }
+  });
 
   ['title', 'background'].forEach(function (k) {
     $(k).addEventListener('input', function () { cfg[k] = $(k).value; });
@@ -185,11 +287,14 @@
 
   $('addRow').addEventListener('click', function () { cfg.rows.push({ title: 'Nueva fila', tiles: [] }); render(); });
 
-  $('save').addEventListener('click', function () {
+  function save(okText) {
+    if (!$('pin').value) { msg('Escribe el PIN de la tele para guardar', true); $('pin').focus(); return; }
     api('POST', '/config', cfg).then(function (r) {
-      msg(r.ok ? 'Guardado. Pulsa el botón rojo en la tele para recargar.' : r.error, !r.ok);
+      msg(r.ok ? okText : r.error, !r.ok);
     }).catch(function () { msg('No se pudo guardar', true); });
-  });
+  }
+
+  $('save').addEventListener('click', function () { save('Guardado. La tele se actualiza en unos segundos.'); });
 
   $('reset').addEventListener('click', function () {
     if (!confirm('¿Volver a la configuración original del launcher?')) return;
@@ -202,7 +307,9 @@
     apps = r.apps || [];
     var list = $('appIds');
     apps.forEach(function (a) { list.appendChild(el('option', { value: a.id, text: a.name })); });
-  }).catch(function () {});
+    if (!apps.length) appsError = r.error || 'La tele no ha devuelto ninguna app';
+    renderApps();
+  }).catch(function () { appsError = 'No se pudo leer la lista de apps'; renderApps(); });
 
   api('GET', '/config').then(function (r) {
     if (r.config) { cfg = r.config; render(); return; }

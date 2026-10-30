@@ -13,7 +13,7 @@
   };
   var TB_WS_URL = 'ws://127.0.0.1:8081';
   var SERVICE_URL = 'http://127.0.0.1:8091';
-  var SERVICE_VERSION = 3; // la que trae service/service.js en esta versión
+  var SERVICE_VERSION = 4; // la que trae service/service.js en esta versión
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, Error: 8, ModuleAction: 10 };
 
   var WEATHER_CODES = {
@@ -82,16 +82,23 @@
   }
 
   // El servicio tarda un momento en arrancar cuando TizenBrew abre el launcher
+  // Lo último guardado en el servicio, para notar cambios hechos desde el móvil
+  var savedJSON = null;
+
   function loadConfig(cb) {
     var tries = 0;
     function trySaved() {
       getJSON(SERVICE_URL + '/config', function (err, data) {
-        if (!err && data && data.config) return cb(normalize(data.config));
+        if (!err && data && data.config) {
+          savedJSON = JSON.stringify(data.config);
+          return cb(normalize(data.config));
+        }
         if (err && ++tries < 4) return setTimeout(trySaved, 700);
         loadBundled();
       });
     }
     function loadBundled() {
+      savedJSON = '';
       getJSON('config.json?t=' + Date.now(), function (err, cfg) {
         if (err) { setStatus('No se pudo leer config.json'); cfg = {}; }
         cfg = normalize(cfg);
@@ -104,6 +111,7 @@
   }
 
   function saveConfig() {
+    savedJSON = JSON.stringify(config);
     try { localStorage.setItem('daniLauncherTheme', JSON.stringify(config.theme)); } catch (e) { /* sin almacenamiento */ }
     request('POST', SERVICE_URL + '/config', config, function (err, data) {
       if (err) setStatus('No se pudo guardar (' + errText(err, data) + ')');
@@ -807,6 +815,35 @@
     e.preventDefault();
   });
 
+  // ---------- Fondo y cambios desde el móvil ----------
+
+  function applyBackground(url) {
+    var bg = $('bg');
+    url = (url || '').trim();
+    if (!url) { bg.style.backgroundImage = ''; bg.className = ''; return; }
+    // Se precarga para avisar si la URL no es una imagen (p. ej. una página de Google Imágenes)
+    var img = new Image();
+    img.onload = function () {
+      bg.style.backgroundImage = 'url("' + url.replace(/"/g, '%22') + '")';
+      bg.className = 'image';
+    };
+    img.onerror = function () { setStatus('El fondo no es una imagen válida'); };
+    img.src = url;
+  }
+
+  // Si se guarda desde el móvil, la tele se recarga sola (sin interrumpir paneles ni el reposo)
+  function watchConfig() {
+    setInterval(function () {
+      if (isOpen('applist') || isOpen('settings') || $('saver').className === 'on') return;
+      getJSON(SERVICE_URL + '/config', function (err, data) {
+        if (err || !data || !data.config) return;
+        var json = JSON.stringify(data.config);
+        if (savedJSON !== null && json !== savedJSON) return location.reload();
+        savedJSON = json;
+      });
+    }, 5000);
+  }
+
   // ---------- Arranque ----------
 
   function start(cfg) {
@@ -815,10 +852,7 @@
     document.body.className += ' intro';
     setTimeout(function () { document.body.className = document.body.className.replace(' intro', ''); }, 2500);
     $('title').textContent = cfg.title || 'Hola';
-    if (cfg.background) {
-      $('bg').style.backgroundImage = 'url("' + cfg.background + '")';
-      $('bg').className = 'image';
-    }
+    applyBackground(cfg.background);
     applyTheme();
     renderRows();
     tickClock();
@@ -832,6 +866,7 @@
     loadHomeAssistant();
     setInterval(loadHomeAssistant, 60 * 1000);
     connectTizenBrew();
+    watchConfig();
     resetIdle();
   }
 
