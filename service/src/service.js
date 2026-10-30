@@ -15,6 +15,7 @@
  *   GET  /default             configuración que trae el launcher (la página la comparte al abrirse)
  *   POST /default             (solo desde la TV)
  *   GET  /editor              editor de accesos para el móvil
+ *   POST /shutdown            (solo desde la TV) cierra este servicio para que lo sustituya uno nuevo
  * Escrito en ES5 porque Tizen 3 trae Node 4. */
 var http = require('http');
 var https = require('https');
@@ -23,6 +24,8 @@ var fs = require('fs');
 var os = require('os');
 
 var PORT = 8091;
+// Súbelo cuando cambie la API del servicio: la página avisa si el que corre es más antiguo
+var SERVICE_VERSION = 3;
 var CONFIG_FILE = '/home/owner/share/dani-launcher.json';
 var PIN = String(1000 + Math.floor(Math.random() * 9000));
 var defaultConfig = null;
@@ -101,7 +104,8 @@ function proxy(target, token, res, redirects) {
 }
 
 function localIp() {
-  var ifaces = os.networkInterfaces();
+  var ifaces;
+  try { ifaces = os.networkInterfaces(); } catch (e) { return null; }
   for (var name in ifaces) {
     for (var i = 0; i < ifaces[name].length; i++) {
       var a = ifaces[name][i];
@@ -162,7 +166,12 @@ var server = http.createServer(function (req, res) {
       return q.url ? proxy(q.url, q.token, res, 0) : send(res, 400, { ok: false, error: 'Falta url' });
     case '/apps': return listApps(res);
     case '/icon': return q.id ? sendIcon(q.id, res) : send(res, 400, { ok: false, error: 'Falta id' });
-    case '/info': return send(res, 200, { ok: true, ip: localIp(), port: PORT, pin: local ? PIN : undefined });
+    case '/info':
+      return send(res, 200, { ok: true, version: SERVICE_VERSION, ip: localIp(), port: PORT, pin: local ? PIN : undefined });
+    case '/shutdown':
+      if (!local || req.method !== 'POST') return send(res, 403, { ok: false, error: 'Solo desde la TV' });
+      send(res, 200, { ok: true });
+      return server.close();
     case '/config':
       if (req.method === 'GET') return readConfig(res);
       if (!writeAllowed) return send(res, 403, { ok: false, error: 'PIN incorrecto' });
@@ -185,9 +194,27 @@ var server = http.createServer(function (req, res) {
   }
 });
 
-// Si TizenBrew relanza el servicio y el puerto sigue ocupado, el anterior sigue atendiendo.
-server.on('error', function () {});
+// Si el puerto está ocupado es que sigue vivo un servicio anterior (TizenBrew no lo cierra al
+// actualizar el módulo). Si es de una versión más antigua se le pide que se cierre y se reintenta.
+var retries = 0;
+server.on('error', function (e) {
+  if (e.code !== 'EADDRINUSE' || retries++ >= 5) return;
+  http.get({ host: '127.0.0.1', port: PORT, path: '/info' }, function (res) {
+    var body = '';
+    res.on('data', function (c) { body += c; });
+    res.on('end', function () {
+      var info = {};
+      try { info = JSON.parse(body); } catch (err) { /* servicio sin /info: muy antiguo */ }
+      if ((info.version || 0) >= SERVICE_VERSION) return; // ya corre uno igual o más nuevo
+      var req = http.request({ host: '127.0.0.1', port: PORT, path: '/shutdown', method: 'POST' });
+      req.on('error', function () {});
+      req.end();
+      setTimeout(listen, 1000);
+    });
+  }).on('error', function () { setTimeout(listen, 1000); });
+});
 // En toda la red local, para que el editor del móvil llegue; lo que cambia algo pide PIN.
-server.listen(PORT, '0.0.0.0');
+function listen() { server.listen(PORT, '0.0.0.0'); }
+listen();
 
 var EDITOR_HTML = '__EDITOR_HTML__';

@@ -13,6 +13,7 @@
   };
   var TB_WS_URL = 'ws://127.0.0.1:8081';
   var SERVICE_URL = 'http://127.0.0.1:8091';
+  var SERVICE_VERSION = 3; // la que trae service/service.js en esta versión
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, Error: 8, ModuleAction: 10 };
 
   var WEATHER_CODES = {
@@ -495,9 +496,11 @@
 
   function settingsItems() {
     var t = config.theme;
-    var info = serviceInfo && serviceInfo.ip
-      ? 'http://' + serviceInfo.ip + ':' + serviceInfo.port + '/editor  ·  PIN ' + serviceInfo.pin
-      : 'No disponible';
+    var info;
+    if (!serviceInfo) info = 'Comprobando…';
+    else if (serviceInfo.error) info = serviceInfo.error;
+    else if (!serviceInfo.ip) info = 'No encuentro la IP de la tele';
+    else info = 'http://' + serviceInfo.ip + ':' + serviceInfo.port + '/editor  ·  PIN ' + serviceInfo.pin;
     return [
       { label: 'Color de acento', list: ACCENTS, get: function () { return t.accent || '#ffffff'; }, set: function (v) { t.accent = v; } },
       { label: 'Tamaño de accesos', list: SIZES, get: function () { return t.size || 'm'; }, set: function (v) { t.size = v; } },
@@ -533,8 +536,27 @@
     panel.className = 'panel open';
     settingsSel = 0;
     renderSettings();
+    serviceInfo = null;
+    loadServiceInfo(function () { if (isOpen('settings')) renderSettings(); });
+  }
+
+  // Si el servicio que corre es de una versión anterior, TizenBrew no lo ha reiniciado tras
+  // actualizar el módulo: el nuevo lo sustituye solo, pero si no lo consigue hay que reiniciar la tele.
+  function loadServiceInfo(cb) {
     getJSON(SERVICE_URL + '/info', function (err, data) {
-      if (!err) { serviceInfo = data; if (isOpen('settings')) renderSettings(); }
+      if (err || !data || (data.version || 0) < SERVICE_VERSION) {
+        serviceInfo = { error: err && /Sin conexión/.test(err.message)
+          ? 'El servicio no responde: reinicia la tele'
+          : 'Servicio antiguo: reinicia la tele' };
+        return cb();
+      }
+      serviceInfo = data;
+      if (data.ip) return cb();
+      // Sin IP desde el servicio: TizenBrew responde con la IP de la tele en su raíz
+      request('GET', 'http://127.0.0.1:8081/', undefined, function (e, ip) {
+        if (!e && /^\d+\.\d+\.\d+\.\d+$/.test((ip || '').trim())) serviceInfo.ip = ip.trim();
+        cb();
+      }, true);
     });
   }
 
