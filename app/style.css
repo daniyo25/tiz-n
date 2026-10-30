@@ -114,6 +114,7 @@ h1 { font-size: 60px; font-weight: 700; }
 .tile.wide img, body.style-tvos .tile.wide img { top: 12%; height: 76%; max-width: 86%; width: 86%; object-fit: contain; border-radius: 0; transform: translateX(-50%); }
 .tile.wide.logo-fill img, body.style-tvos .tile.wide.logo-fill img { top: 0; height: 100%; width: 100%; max-width: 100%; }
 .tile.brand img, body.style-tvos .tile.brand img { top: 50%; left: 50%; width: 64%; height: 44%; max-width: none; object-fit: contain; transform: translate(-50%, -50%); border-radius: 0; }
+.tile.brand.white img { filter: brightness(0) invert(1); }
 .tile.wide .name { opacity: 0; }
 .tile.wide.focused .name { opacity: 1; }
 
