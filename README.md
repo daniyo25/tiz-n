@@ -23,7 +23,7 @@ jsDelivr guarda en caché las ramas hasta 12 horas. Para probar una versión al 
 | Rojo | Recargar |
 | Verde | Cambiar el tamaño de los accesos |
 | Amarillo | Lista de apps instaladas. OK sobre una app para añadirla a una fila, moverla o quitarla. Izquierda y derecha saltan de 10 en 10 |
-| Azul | Ajustes: color, tamaño, tipografía, animaciones, modo reposo, autoarranque y dirección del editor |
+| Azul | Ajustes: estilo (Apple TV o clásico), color, tamaño, tipografía, animaciones, modo reposo, autoarranque y dirección del editor |
 | Volver | Cerrar el panel abierto o volver a TizenBrew |
 
 ## Editar desde el móvil
@@ -43,7 +43,7 @@ La configuración por defecto está en `app/config.json`. Lo que guardes desde l
 - `title`: el saludo de arriba.
 - `background`: URL directa de una imagen de fondo (que acabe en .jpg, .png…, no la página donde aparece; si no es una imagen, la tele lo avisa abajo a la derecha). Si lo dejas vacío, el fondo es negro puro (en OLED, esos píxeles se apagan).
 - `weather`: ciudad y coordenadas. El tiempo sale de Open-Meteo, que no necesita clave.
-- `theme`: `accent` (color), `size` (`s`, `m` o `l`), `font` (`sans`, `serif` o `mono`) y `anim` (`false` quita las animaciones).
+- `theme`: `style` (`tvos` para el estilo Apple TV, `classic` para el original), `accent` (color), `size` (`s`, `m` o `l`), `font` (`sans`, `serif` o `mono`) y `anim` (`false` quita las animaciones).
 - `screensaver.minutes`: minutos sin tocar el mando hasta el modo reposo. `0` lo desactiva. En reposo solo queda un reloj tenue que cambia de sitio cada minuto, para evitar marcas en la OLED.
 - `autolaunch`: si el launcher se abre al iniciar TizenBrew.
 - `widgets`:
