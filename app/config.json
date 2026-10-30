@@ -1,0 +1,19 @@
+{
+  "title": "Hola, Dani",
+  "background": "",
+  "weather": {
+    "city": "Madrid",
+    "latitude": 40.4168,
+    "longitude": -3.7038
+  },
+  "tiles": [
+    { "name": "YouTube", "type": "tvapp", "id": "111299001912", "color": "#ff0033" },
+    { "name": "Netflix", "type": "tvapp", "id": "3201907018807", "color": "#e50914" },
+    { "name": "Prime Video", "type": "tvapp", "id": "3201910019365", "color": "#00a8e1" },
+    { "name": "Disney+", "type": "tvapp", "id": "3201901017640", "color": "#113ccf" },
+    { "name": "Apple TV", "type": "tvapp", "id": "3201807016597", "color": "#333333" },
+    { "name": "Spotify", "type": "tvapp", "id": "3201606009684", "color": "#1db954" },
+    { "name": "TizenTube", "type": "module", "id": "gh/reisxd/TizenTube", "color": "#cc0000" },
+    { "name": "Jellyfin", "type": "module", "id": "npm/@glenlowland/jellyfin-tizen", "color": "#7b4fd6" }
+  ]
+}
