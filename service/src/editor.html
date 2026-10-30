@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dani Launcher · Editor</title>
+<style>
+  :root { --bg: #000; --card: #15171c; --line: #2a2d35; --text: #f2f4f8; --muted: #9aa0ab; --accent: #4f8cff; --danger: #ff5c5c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 -apple-system, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px 16px 96px; }
+  h1 { font-size: 22px; margin: 8px 0 4px; }
+  h2 { font-size: 17px; margin: 0; }
+  p.muted, .muted { color: var(--muted); font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 12px 0; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #0c0d10; color: var(--text); font-size: 16px; }
+  input[type=color] { padding: 2px; height: 42px; }
+  .row-head { display: flex; gap: 8px; align-items: center; }
+  .row-head input { flex: 1; font-weight: 600; }
+  .tile { border-top: 1px solid var(--line); padding: 10px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+  .tile .full { grid-column: 1 / -1; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  button { border: 0; border-radius: 10px; padding: 10px 12px; font-size: 15px; background: #262a33; color: var(--text); }
+  button.primary { background: var(--accent); color: #fff; font-weight: 600; }
+  button.danger { color: var(--danger); }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.92); border-top: 1px solid var(--line); padding: 12px 16px; display: flex; gap: 8px; justify-content: center; }
+  .bar button { flex: 1; max-width: 300px; }
+  #msg { position: fixed; left: 16px; right: 16px; bottom: 76px; text-align: center; font-size: 14px; }
+  .pin { display: flex; gap: 8px; }
+  .pin input { flex: 1; letter-spacing: 6px; text-align: center; font-size: 22px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dani Launcher</h1>
+  <p class="muted">Edita los accesos de la tele. Los cambios se ven al pulsar Guardar; en la tele, pulsa el botón rojo para recargar.</p>
+
+  <div class="card">
+    <h2>PIN</h2>
+    <p class="muted">Lo ves en la tele: botón azul, Ajustes.</p>
+    <div class="pin"><input id="pin" inputmode="numeric" maxlength="4" placeholder="0000"></div>
+  </div>
+
+  <div class="card">
+    <h2>General</h2>
+    <label for="title">Saludo</label>
+    <input id="title">
+    <label for="background">Imagen de fondo (URL, vacío = negro puro)</label>
+    <input id="background" placeholder="https://…">
+    <label for="city">Ciudad del tiempo</label>
+    <div class="row-head"><input id="city"><button id="findCity">Buscar</button></div>
+    <p class="muted" id="coords"></p>
+  </div>
+
+  <div id="rows"></div>
+  <button id="addRow">+ Añadir fila</button>
+</main>
+<div id="msg"></div>
+<div class="bar">
+  <button id="reset" class="danger">Restablecer</button>
+  <button id="save" class="primary">Guardar</button>
+</div>
+
+<datalist id="appIds"></datalist>
+
+<script>
+(function () {
+  var cfg = null;
+  var apps = [];
+
+  function $(id) { return document.getElementById(id); }
+  function msg(text, bad) { $('msg').textContent = text; $('msg').style.color = bad ? '#ff5c5c' : '#9aa0ab'; }
+  function el(tag, attrs, children) {
+    var e = document.createElement(tag);
+    for (var k in attrs || {}) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), attrs[k]);
+      else e.setAttribute(k, attrs[k]);
+    }
+    (children || []).forEach(function (c) { e.appendChild(c); });
+    return e;
+  }
+  function api(method, path, body) {
+    return fetch(path, {
+      method: method,
+      headers: { 'Content-Type': 'application/json', 'X-Pin': $('pin').value },
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) { return r.json(); });
+  }
+
+  function input(obj, key, label, opts) {
+    opts = opts || {};
+    var i = el('input', { type: opts.type || 'text', value: obj[key] || '' });
+    if (opts.list) i.setAttribute('list', opts.list);
+    i.addEventListener('input', function () { obj[key] = i.value; if (opts.onchange) opts.onchange(); });
+    return el('div', { 'class': opts.full ? 'full' : '' }, [el('label', { text: label }), i]);
+  }
+
+  function move(list, i, d) {
+    var j = i + d;
+    if (j < 0 || j >= list.length) return;
+    var t = list[i]; list[i] = list[j]; list[j] = t;
+    render();
+  }
+
+  function renderTile(row, t, i) {
+    var type = el('select', {}, [
+      el('option', { value: 'tvapp', text: 'App de la tele' }),
+      el('option', { value: 'module', text: 'Módulo de TizenBrew' }),
+      el('option', { value: 'url', text: 'Web' })
+    ]);
+    type.value = t.type || 'tvapp';
+    type.addEventListener('change', function () { t.type = type.value; render(); });
+    var idLabel = t.type === 'module' ? 'Módulo (gh/… o npm/…)' : t.type === 'url' ? 'URL' : 'ID de la app';
+    var idField = input(t, 'id', idLabel, {
+      full: true,
+      list: t.type === 'tvapp' || !t.type ? 'appIds' : null,
+      onchange: function () {
+        // Al elegir una app de la lista, rellena el nombre si está vacío
+        var match = apps.filter(function (a) { return a.id === t.id; })[0];
+        if (match && !t.name) { t.name = match.name; render(); }
+      }
+    });
+    return el('div', { 'class': 'tile' }, [
+      input(t, 'name', 'Nombre'),
+      el('div', {}, [el('label', { text: 'Tipo' }), type]),
+      idField,
+      input(t, 'color', 'Color', { type: 'color' }),
+      input(t, 'icon', 'Logo (URL, opcional)'),
+      el('div', { 'class': 'actions full' }, [
+        el('button', { text: '↑', onclick: function () { move(row.tiles, i, -1); } }),
+        el('button', { text: '↓', onclick: function () { move(row.tiles, i, 1); } }),
+        el('button', { 'class': 'danger', text: 'Quitar', onclick: function () { row.tiles.splice(i, 1); render(); } })
+      ])
+    ]);
+  }
+
+  function render() {
+    $('title').value = cfg.title || '';
+    $('background').value = cfg.background || '';
+    $('city').value = (cfg.weather && cfg.weather.city) || '';
+    $('coords').textContent = cfg.weather ? cfg.weather.latitude + ', ' + cfg.weather.longitude : '';
+    var rows = $('rows');
+    rows.innerHTML = '';
+    cfg.rows.forEach(function (row, r) {
+      var title = el('input', { value: row.title || '' });
+      title.addEventListener('input', function () { row.title = title.value; });
+      var card = el('div', { 'class': 'card' }, [
+        el('div', { 'class': 'row-head' }, [
+          title,
+          el('button', { text: '↑', onclick: function () { move(cfg.rows, r, -1); } }),
+          el('button', { text: '↓', onclick: function () { move(cfg.rows, r, 1); } }),
+          el('button', { 'class': 'danger', text: '✕', onclick: function () {
+            if (confirm('¿Quitar la fila "' + (row.title || '') + '"?')) { cfg.rows.splice(r, 1); render(); }
+          } })
+        ])
+      ]);
+      row.tiles.forEach(function (t, i) { card.appendChild(renderTile(row, t, i)); });
+      card.appendChild(el('div', { 'class': 'actions' }, [
+        el('button', { text: '+ Añadir acceso', onclick: function () { row.tiles.push({ name: '', type: 'tvapp', id: '', color: '#2a3550' }); render(); } })
+      ]));
+      rows.appendChild(card);
+    });
+  }
+
+  ['title', 'background'].forEach(function (k) {
+    $(k).addEventListener('input', function () { cfg[k] = $(k).value; });
+  });
+
+  $('findCity').addEventListener('click', function () {
+    var name = $('city').value.trim();
+    if (!name) return;
+    fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=es&name=' + encodeURIComponent(name))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.results || !d.results.length) return msg('No encuentro esa ciudad', true);
+        var c = d.results[0];
+        cfg.weather = { city: c.name, latitude: c.latitude, longitude: c.longitude };
+        render();
+        msg('Ciudad: ' + c.name + (c.country ? ' (' + c.country + ')' : ''));
+      })
+      .catch(function () { msg('No se pudo buscar la ciudad', true); });
+  });
+
+  $('addRow').addEventListener('click', function () { cfg.rows.push({ title: 'Nueva fila', tiles: [] }); render(); });
+
+  $('save').addEventListener('click', function () {
+    api('POST', '/config', cfg).then(function (r) {
+      msg(r.ok ? 'Guardado. Pulsa el botón rojo en la tele para recargar.' : r.error, !r.ok);
+    }).catch(function () { msg('No se pudo guardar', true); });
+  });
+
+  $('reset').addEventListener('click', function () {
+    if (!confirm('¿Volver a la configuración original del launcher?')) return;
+    api('DELETE', '/config').then(function (r) {
+      msg(r.ok ? 'Restablecido. Recarga la página.' : r.error, !r.ok);
+    });
+  });
+
+  api('GET', '/apps').then(function (r) {
+    apps = r.apps || [];
+    var list = $('appIds');
+    apps.forEach(function (a) { list.appendChild(el('option', { value: a.id, text: a.name })); });
+  }).catch(function () {});
+
+  api('GET', '/config').then(function (r) {
+    if (r.config) { cfg = r.config; render(); return; }
+    // Sin configuración guardada: parte de la que trae el launcher (la tele la comparte al abrirse)
+    return api('GET', '/default').then(function (d) {
+      if (!d.config) return msg('Abre el launcher en la tele y recarga esta página', true);
+      cfg = d.config;
+      render();
+    });
+  }).catch(function () { msg('No se pudo leer la configuración', true); });
+})();
+</script>
+</body>
+</html>

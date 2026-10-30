@@ -1,13 +1,25 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+:root {
+  --accent: #ffffff;
+  --tile-w: 280px;
+  --tile-h: 158px;
+  --tile-font: 26px;
+}
+body.size-s { --tile-w: 220px; --tile-h: 124px; --tile-font: 22px; }
+body.size-l { --tile-w: 360px; --tile-h: 203px; --tile-font: 32px; }
+body.font-sans { font-family: "SamsungOne", "Samsung Sharp Sans", Arial, sans-serif; }
+body.font-serif { font-family: Georgia, "Times New Roman", serif; }
+body.font-mono { font-family: "Courier New", monospace; }
+
 html, body {
   width: 1920px;
   height: 1080px;
   overflow: hidden;
   background: #000;
   color: #f2f4f8;
-  font-family: "SamsungOne", "Samsung Sharp Sans", Arial, sans-serif;
 }
+.hidden { display: none !important; }
 
 #bg {
   position: fixed;
@@ -28,76 +40,154 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 80px 120px 0;
+  padding: 64px 96px 0;
+  height: 230px;
 }
-h1 { font-size: 64px; font-weight: 700; }
-#date { font-size: 32px; opacity: .7; margin-top: 8px; }
+h1 { font-size: 60px; font-weight: 700; }
+#date { font-size: 30px; opacity: .7; margin-top: 8px; }
 .right { text-align: right; }
-#clock { font-size: 96px; font-weight: 300; line-height: 1; }
-#weather { font-size: 32px; opacity: .8; margin-top: 12px; }
+#clock { font-size: 92px; font-weight: 300; line-height: 1; }
+#weather { font-size: 30px; opacity: .8; margin-top: 12px; }
 
-main {
-  display: grid;
-  grid-template-columns: repeat(4, 380px);
-  gap: 40px;
-  padding: 80px 120px 0;
-}
-body.compact main { grid-template-columns: repeat(6, 250px); gap: 30px; }
-
-.tile {
-  height: 214px;
-  border-radius: 24px;
+#content {
+  position: absolute;
+  top: 230px; left: 0; right: 0; bottom: 110px;
   display: flex;
-  align-items: flex-end;
-  padding: 24px 28px;
-  font-size: 36px;
-  font-weight: 700;
+  padding: 0 96px 0 80px;
+  gap: 40px;
+}
+
+/* Filas de accesos */
+#rows { flex: 1; overflow: hidden; position: relative; }
+.row { margin-bottom: 18px; }
+.row-title { font-size: 26px; font-weight: 600; opacity: .55; padding: 0 16px; }
+.row.active .row-title { opacity: 1; color: var(--accent); }
+.strip { overflow: hidden; position: relative; padding: 16px; white-space: nowrap; }
+.tile {
+  display: inline-block;
+  vertical-align: top;
+  width: var(--tile-w);
+  height: var(--tile-h);
+  margin-right: 28px;
+  border-radius: 20px;
   position: relative;
+  overflow: hidden;
   box-shadow: 0 10px 30px rgba(0,0,0,.4);
   transition: transform .15s ease, box-shadow .15s ease;
+  white-space: normal;
 }
-body.compact .tile { height: 140px; font-size: 28px; padding: 18px 20px; }
-.tile .kind {
+.tile img {
   position: absolute;
-  top: 20px;
-  right: 24px;
-  font-size: 20px;
-  font-weight: 400;
-  opacity: .75;
+  top: 18%; left: 50%;
+  height: 48%;
+  max-width: 70%;
+  transform: translateX(-50%);
+  border-radius: 12px;
+  object-fit: contain;
 }
+.tile .name {
+  position: absolute;
+  left: 20px; right: 20px; bottom: 14px;
+  font-size: calc(var(--tile-font) * .8);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile.noicon .name { font-size: var(--tile-font); font-weight: 700; bottom: 18px; }
+.tile .kind { position: absolute; top: 12px; right: 16px; font-size: 16px; opacity: .75; }
 .tile.focused {
   transform: scale(1.08);
-  box-shadow: 0 0 0 6px #fff, 0 20px 50px rgba(0,0,0,.6);
+  box-shadow: 0 0 0 5px var(--accent), 0 20px 50px rgba(0,0,0,.6);
   z-index: 1;
 }
 
+/* Widgets */
+#widgets { width: 460px; display: flex; flex-direction: column; gap: 20px; overflow: hidden; }
+.widget {
+  border: 1px solid #1c1f26;
+  border-radius: 20px;
+  padding: 20px 24px;
+  font-size: 22px;
+}
+.widget h3 { font-size: 18px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; opacity: .55; margin-bottom: 12px; }
+.forecast { display: flex; justify-content: space-between; text-align: center; }
+.forecast .day { flex: 1; }
+.forecast .d { opacity: .6; font-size: 18px; }
+.forecast .t { font-size: 24px; font-weight: 600; margin-top: 4px; }
+.forecast .s { font-size: 16px; opacity: .7; margin-top: 2px; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 18px; row-gap: 4px; }
+.cal .wd { opacity: .45; font-size: 15px; }
+.cal .other { opacity: .2; }
+.cal .today { background: var(--accent); color: #000; border-radius: 10px; font-weight: 700; }
+.news li { list-style: none; font-size: 19px; line-height: 1.35; padding: 6px 0; border-top: 1px solid #1c1f26; }
+.news li:first-child { border-top: 0; }
+.ha div { display: flex; justify-content: space-between; padding: 4px 0; font-size: 20px; }
+.ha .v { font-weight: 600; }
+
 footer {
   position: fixed;
-  left: 120px;
-  right: 120px;
-  bottom: 60px;
+  left: 96px; right: 96px; bottom: 44px;
   display: flex;
-  gap: 48px;
-  font-size: 26px;
+  gap: 44px;
+  font-size: 24px;
   opacity: .7;
 }
 #status { margin-left: auto; }
-.dot { display: inline-block; width: 22px; height: 22px; border-radius: 50%; margin-right: 12px; vertical-align: -3px; }
+.dot { display: inline-block; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px; vertical-align: -2px; }
 .red { background: #e33; }
 .green { background: #3c3; }
 .yellow { background: #ec3; }
+.blue { background: #38f; }
 
-#applist {
+/* Paneles: lista de apps y ajustes */
+.panel {
   display: none;
   position: fixed;
+  background: #111;
+  border-radius: 24px;
+  z-index: 5;
+}
+.panel.open { display: block; }
+#applist {
   top: 80px; right: 120px; bottom: 140px;
   width: 760px;
   padding: 32px 40px;
   overflow-y: auto;
-  background: #111;
-  border-radius: 24px;
   font-size: 24px;
   line-height: 1.6;
 }
 #applist .head { opacity: .6; margin-bottom: 12px; }
-#applist.open { display: block; }
+#settings {
+  top: 120px; left: 50%;
+  width: 900px;
+  margin-left: -450px;
+  padding: 36px 44px;
+  font-size: 26px;
+}
+#settings h2 { font-size: 34px; margin-bottom: 20px; }
+#settings .item { display: flex; justify-content: space-between; padding: 14px 20px; border-radius: 14px; }
+#settings .item.sel { background: #262a33; box-shadow: inset 0 0 0 3px var(--accent); }
+#settings .val { font-weight: 600; }
+#settings .item.sel .val::before { content: "‹  "; opacity: .6; }
+#settings .item.sel .val::after { content: "  ›"; opacity: .6; }
+#settings .item.info .val::before, #settings .item.info .val::after { content: ""; }
+#settings .hint { margin-top: 18px; font-size: 20px; opacity: .55; }
+
+/* Modo reposo OLED: solo un reloj tenue que cambia de sitio */
+#saver {
+  display: none;
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: #000;
+  z-index: 10;
+}
+#saver.on { display: block; }
+#saverClock {
+  position: absolute;
+  font-size: 120px;
+  font-weight: 200;
+  color: #fff;
+  opacity: .28;
+  transition: opacity 1s;
+}
