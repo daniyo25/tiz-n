@@ -59,10 +59,12 @@ h1 { font-size: 60px; font-weight: 700; }
 
 /* Filas de accesos */
 #rows { flex: 1; overflow: hidden; position: relative; }
+#rowsInner { transition: transform .35s cubic-bezier(.22, .8, .3, 1); }
 .row { margin-bottom: 18px; }
 .row-title { font-size: 26px; font-weight: 600; opacity: .55; padding: 0 16px; }
 .row.active .row-title { opacity: 1; color: var(--accent); }
 .strip { overflow: hidden; position: relative; padding: 16px; white-space: nowrap; }
+.track { position: relative; transition: transform .3s cubic-bezier(.22, .8, .3, 1); }
 .tile {
   display: inline-block;
   vertical-align: top;
@@ -73,7 +75,7 @@ h1 { font-size: 60px; font-weight: 700; }
   position: relative;
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(0,0,0,.4);
-  transition: transform .15s ease, box-shadow .15s ease;
+  transition: transform .28s cubic-bezier(.34, 1.56, .64, 1), box-shadow .28s ease;
   white-space: normal;
 }
 .tile img {
@@ -98,9 +100,27 @@ h1 { font-size: 60px; font-weight: 700; }
 .tile .kind { position: absolute; top: 12px; right: 16px; font-size: 16px; opacity: .75; }
 .tile.focused {
   transform: scale(1.08);
-  box-shadow: 0 0 0 5px var(--accent), 0 20px 50px rgba(0,0,0,.6);
+  box-shadow: 0 0 0 5px var(--accent), 0 0 40px var(--accent), 0 20px 50px rgba(0,0,0,.6);
   z-index: 1;
 }
+.tile.focused.pressed { transform: scale(.97); transition-duration: .12s; }
+
+/* Animaciones de entrada (solo al abrir) */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: none; } }
+@keyframes slideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+@keyframes popIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+body.intro header { animation: fadeUp .6s ease both; }
+body.intro .row { animation: fadeUp .6s ease both; }
+body.intro .widget { animation: slideIn .7s ease both; }
+body.intro #w-forecast { animation-delay: .3s; }
+body.intro #w-calendar { animation-delay: .4s; }
+body.intro #w-news { animation-delay: .5s; }
+body.intro #w-ha { animation-delay: .6s; }
+#applist.open { animation: slideIn .25s ease both; }
+#settings.open { animation: popIn .25s ease both; }
+
+/* Sin animaciones (Ajustes) */
+body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
 
 /* Widgets */
 #widgets { width: 460px; display: flex; flex-direction: column; gap: 20px; overflow: hidden; }
@@ -157,7 +177,10 @@ footer {
   font-size: 24px;
   line-height: 1.6;
 }
-#applist .head { opacity: .6; margin-bottom: 12px; }
+#applist .head { opacity: .6; margin: 4px 0 12px; }
+#applist .app { padding: 6px 18px; border-radius: 12px; display: flex; justify-content: space-between; gap: 20px; }
+#applist .app .id { opacity: .45; font-size: 20px; }
+#applist .app.sel { background: #262a33; box-shadow: inset 0 0 0 3px var(--accent); }
 #settings {
   top: 120px; left: 50%;
   width: 900px;
@@ -189,5 +212,5 @@ footer {
   font-weight: 200;
   color: #fff;
   opacity: .28;
-  transition: opacity 1s;
+  transition: opacity 1s ease;
 }
