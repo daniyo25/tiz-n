@@ -20,14 +20,19 @@ Launcher personal para TVs Samsung (Tizen) que funciona como módulo de [TizenBr
 | OK | Abrir |
 | Rojo | Recargar |
 | Verde | Cambiar a modo compacto (6 columnas) |
+| Amarillo | Ver las apps instaladas con su ID (para `config.json`) |
 | Volver | Volver a la pantalla anterior |
+
+## Cómo abre las apps
+
+La página del launcher no tiene permiso para abrir otras apps, y la API local de la TV responde 401. Por eso el módulo incluye un servicio (`service/service.js`) que TizenBrew arranca junto al launcher. El servicio tiene acceso a `tizen.application` y escucha en `127.0.0.1:8091`.
 
 ## Personalizar
 
 Todo se edita en `app/config.json`:
 
 - `title`: el saludo de arriba.
-- `background`: la URL de una imagen de fondo. Si lo dejas vacío, se usa un degradado.
+- `background`: la URL de una imagen de fondo. Si lo dejas vacío, el fondo es negro puro (ideal para OLED: los píxeles se apagan).
 - `weather`: ciudad y coordenadas. El tiempo sale de Open-Meteo, que no necesita clave.
 - `tiles`: los accesos. Cada uno tiene `name`, `color` y uno de estos tipos:
   - `tvapp`: una app instalada en la TV. `id` es su ID de Tizen, por ejemplo `3201907018807` para Netflix.

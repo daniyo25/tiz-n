@@ -1,7 +1,7 @@
 {
   "name": "tiz-n",
   "appName": "Dani Launcher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Launcher personal para TVs Samsung: cuadrícula de apps y módulos, reloj y tiempo.",
   "packageType": "app",
   "appPath": "app/index.html",
@@ -12,5 +12,6 @@
     "ColorF3Blue"
   ],
   "author": "daniyo25",
-  "license": "MIT"
+  "license": "MIT",
+  "serviceFile": "service/service.js"
 }
