@@ -89,6 +89,16 @@
   // ---------- Configuración ----------
 
   // Las primeras versiones tenían una lista plana de "tiles" en vez de filas
+  // Logos horizontales de las apps más comunes (la tele no trae ninguno). Se buscan por el ID
+  // de la app o del módulo de TizenBrew; un logo o banner propio del acceso tiene prioridad.
+  var KNOWN_LOGOS = {};
+
+  var OLD_IDS = {
+    '3201907018807': 'org.tizen.netflix-app', '3201910019365': 'org.tizen.primevideo',
+    '3201901017640': 'MCmYXNxgcu.DisneyPlus', '3201807016597': 'com.samsung.tv.aria-video',
+    '111299001912': 'com.samsung.tv.cobalt-yt', '3201606009684': 'rJeHak5zRg.Spotify'
+  };
+
   function normalize(cfg) {
     if (!cfg.rows) cfg.rows = [{ title: 'Apps', tiles: cfg.tiles || [] }];
     delete cfg.tiles;
@@ -96,6 +106,11 @@
     cfg.screensaver = cfg.screensaver || { minutes: 5 };
     cfg.widgets = cfg.widgets || {};
     delete cfg.widgets.calendar;
+    // Los primeros accesos usaban el ID de la tienda de Samsung; en la S95B el de Apple TV y el de
+    // Spotify no abrían nada y con ninguno se encontraba el icono. Se cambian por el ID de la app.
+    cfg.rows.forEach(function (row) {
+      (row.tiles || []).forEach(function (t) { if (t.type === 'tvapp' && OLD_IDS[t.id]) t.id = OLD_IDS[t.id]; });
+    });
     return cfg;
   }
 
@@ -394,7 +409,7 @@
     if ($('saver').className === 'on') stopSaver();
     if (item.kind === 'youtube') {
       setStatus('Abriendo en YouTube…');
-      return getJSON(SERVICE_URL + '/launch?id=111299001912&payload=' + encodeURIComponent('v=' + item.video), function () {});
+      return getJSON(SERVICE_URL + '/launch?id=com.samsung.tv.cobalt-yt&payload=' + encodeURIComponent('v=' + item.video), function () {});
     }
     if (item.kind === 'web') return setStatus('Solo se pueden enviar fotos, vídeos o enlaces de YouTube');
     closePanels();
@@ -473,7 +488,27 @@
     el.className = 'tile';
     el.style.background = t.color || '#2a3550';
     var url = iconUrl(t);
-    if (t.banner) {
+    var known = !t.banner && !t.icon && KNOWN_LOGOS[t.id];
+    if (known) {
+      // Logo horizontal de la marca sobre su color: llena la tarjeta sin estirarse
+      el.style.background = known.bg;
+      el.className += ' wide brand';
+      var logo = document.createElement('img');
+      logo.onerror = function () {
+        // Sin internet o sin el logo: se vuelve al icono de la app
+        if (logo.parentNode) el.removeChild(logo);
+        el.className = el.className.replace(' wide brand', '');
+        el.style.background = t.color || '#2a3550';
+        if (url) {
+          var img = document.createElement('img');
+          img.onerror = function () { if (img.parentNode) el.removeChild(img); el.className += ' noicon'; };
+          img.src = url;
+          el.insertBefore(img, el.firstChild);
+        } else el.className += ' noicon';
+      };
+      logo.src = known.url;
+      el.appendChild(logo);
+    } else if (t.banner) {
       // Imagen panorámica propia: cubre la tarjeta entera
       el.style.backgroundImage = 'url("' + t.banner.replace(/"/g, '%22') + '")';
       el.style.backgroundSize = 'cover';

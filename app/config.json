@@ -33,17 +33,17 @@
     {
       "title": "Streaming",
       "tiles": [
-        { "name": "Netflix", "type": "tvapp", "id": "3201907018807", "color": "#e50914" },
-        { "name": "Prime Video", "type": "tvapp", "id": "3201910019365", "color": "#00a8e1" },
-        { "name": "Disney+", "type": "tvapp", "id": "3201901017640", "color": "#113ccf" },
-        { "name": "Apple TV", "type": "tvapp", "id": "3201807016597", "color": "#333333" },
-        { "name": "YouTube", "type": "tvapp", "id": "111299001912", "color": "#ff0033" }
+        { "name": "Netflix", "type": "tvapp", "id": "org.tizen.netflix-app", "color": "#e50914" },
+        { "name": "Prime Video", "type": "tvapp", "id": "org.tizen.primevideo", "color": "#00a8e1" },
+        { "name": "Disney+", "type": "tvapp", "id": "MCmYXNxgcu.DisneyPlus", "color": "#113ccf" },
+        { "name": "Apple TV", "type": "tvapp", "id": "com.samsung.tv.aria-video", "color": "#333333" },
+        { "name": "YouTube", "type": "tvapp", "id": "com.samsung.tv.cobalt-yt", "color": "#ff0033" }
       ]
     },
     {
       "title": "Música",
       "tiles": [
-        { "name": "Spotify", "type": "tvapp", "id": "3201606009684", "color": "#1db954" }
+        { "name": "Spotify", "type": "tvapp", "id": "rJeHak5zRg.Spotify", "color": "#1db954" }
       ]
     },
     {
