@@ -13,7 +13,7 @@
   };
   var TB_WS_URL = 'ws://127.0.0.1:8081';
   var SERVICE_URL = 'http://127.0.0.1:8091';
-  var SERVICE_VERSION = 5; // la que trae service/service.js en esta versión
+  var SERVICE_VERSION = 6; // la que trae service/service.js en esta versión
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, Error: 8, ModuleAction: 10 };
 
   var WEATHER_CODES = {
@@ -268,10 +268,18 @@
     };
   }
 
+  var HA_TOGGLE = { light: 'toggle', 'switch': 'toggle', fan: 'toggle', input_boolean: 'toggle', automation: 'toggle',
+    cover: 'toggle', media_player: 'media_play_pause', script: 'turn_on', scene: 'turn_on', button: 'press' };
+  var HA_STATES = { on: 'Encendido', off: 'Apagado', open: 'Abierto', closed: 'Cerrado', playing: 'Reproduciendo',
+    paused: 'En pausa', idle: 'Inactivo', unavailable: 'No disponible', home: 'En casa', not_home: 'Fuera',
+    locked: 'Cerrado', unlocked: 'Abierto', scening: '' };
+  var haTimer = null;
+
   function loadHomeAssistant() {
     var ha = config.widgets.homeassistant;
     if (!ha || ha.enabled === false || !ha.url || !ha.token || !ha.entities || !ha.entities.length) {
       $('w-ha').className = 'widget hidden';
+      buildSide();
       return;
     }
     var results = [];
@@ -280,7 +288,8 @@
       getJSON(proxyUrl(ha.url.replace(/\/$/, '') + '/api/states/' + id, ha.token), function (err, s) {
         if (!err && s && s.state !== undefined) {
           var unit = s.attributes && s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : '';
-          results[i] = { name: (s.attributes && s.attributes.friendly_name) || id, value: s.state + unit };
+          results[i] = { id: id, name: (s.attributes && s.attributes.friendly_name) || id,
+            value: (HA_STATES[s.state] !== undefined ? HA_STATES[s.state] : s.state) + unit, on: s.state === 'on' || s.state === 'open' || s.state === 'playing' };
         }
         if (--pending) return;
         var box = widget('w-ha', 'Casa');
@@ -289,14 +298,139 @@
         results.forEach(function (r) {
           if (!r) return;
           var line = document.createElement('div');
+          var domain = r.id.split('.')[0];
+          line.className = 'ha-item' + (HA_TOGGLE[domain] ? ' can' : '') + (r.on ? ' on' : '');
+          line.setAttribute('data-id', r.id);
           line.innerHTML = '<span></span><span class="v"></span>';
           line.children[0].textContent = r.name;
           line.children[1].textContent = r.value;
           wrap.appendChild(line);
         });
         box.appendChild(wrap);
+        buildSide();
       });
     });
+  }
+
+  // OK sobre una entidad de Home Assistant: encender/apagar, abrir/cerrar o activar
+  function haAction(id) {
+    var ha = config.widgets.homeassistant;
+    var domain = id.split('.')[0];
+    var service = HA_TOGGLE[domain];
+    if (!service) return setStatus('Esta entidad solo se puede ver');
+    var target = ha.url.replace(/\/$/, '') + '/api/services/' + domain + '/' + service;
+    request('POST', proxyUrl(target, ha.token), { entity_id: id }, function (err) {
+      if (err) return setStatus('Home Assistant no responde');
+      clearTimeout(haTimer);
+      haTimer = setTimeout(loadHomeAssistant, 600);
+    });
+  }
+
+  // ---------- Spotify ----------
+
+  var spotifyNow = null;
+
+  function msText(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + pad(s % 60); }
+
+  function loadSpotify() {
+    if (config.widgets.spotify === false) { $('w-spotify').className = 'widget hidden'; buildSide(); return; }
+    getJSON(SERVICE_URL + '/spotify/now', function (err, d) {
+      if (err || !d || !d.connected) { $('w-spotify').className = 'widget hidden'; buildSide(); return; }
+      spotifyNow = d;
+      var box = widget('w-spotify', 'Spotify');
+      var it = d.item;
+      var wrap = document.createElement('div');
+      wrap.className = 'sp';
+      if (!it) {
+        wrap.appendChild(line('No suena nada', 'sp-idle'));
+      } else {
+        var img = document.createElement('img');
+        if (it.image) img.src = it.image;
+        wrap.appendChild(img);
+        var txt = document.createElement('div');
+        txt.className = 'sp-txt';
+        txt.appendChild(line(it.title, 'sp-title'));
+        txt.appendChild(line(it.artist, 'sp-artist'));
+        var bar = document.createElement('div');
+        bar.className = 'sp-bar';
+        var fill = document.createElement('div');
+        fill.style.width = (it.duration ? Math.min(100, it.progress / it.duration * 100) : 0) + '%';
+        bar.appendChild(fill);
+        txt.appendChild(bar);
+        txt.appendChild(line((d.playing ? '▶  ' : '❚❚  ') + msText(it.progress) + ' / ' + msText(it.duration), 'sp-time'));
+        wrap.appendChild(txt);
+      }
+      box.appendChild(wrap);
+      buildSide();
+    });
+  }
+
+  function spotifyControl(action) {
+    getJSON(SERVICE_URL + '/spotify/control?action=' + action, function (err, d) {
+      if (err || !d.ok) setStatus('Spotify: ' + errText(err, d) + (d && /premium/i.test(d.error || '') ? '' : ''));
+      setTimeout(loadSpotify, 500);
+    });
+  }
+
+  // ---------- Enviar desde el móvil ----------
+
+  var lastInbox = null;
+  var viewerItem = null;
+
+  function checkInbox() {
+    if (!$('saver')) return;
+    getJSON(SERVICE_URL + '/inbox', function (err, d) {
+      if (err || !d) return;
+      // Lo enviado antes de abrir el launcher no se muestra
+      if (lastInbox === null) { lastInbox = d.item ? d.item.id : 0; return; }
+      if (!d.item) return;
+      if (d.item.id === lastInbox) return;
+      lastInbox = d.item.id;
+      showSent(d.item);
+    });
+  }
+
+  function showSent(item) {
+    if ($('saver').className === 'on') stopSaver();
+    if (item.kind === 'youtube') {
+      setStatus('Abriendo en YouTube…');
+      return getJSON(SERVICE_URL + '/launch?id=111299001912&payload=' + encodeURIComponent('v=' + item.video), function () {});
+    }
+    if (item.kind === 'web') return setStatus('Solo se pueden enviar fotos, vídeos o enlaces de YouTube');
+    closePanels();
+    var v = $('viewer');
+    v.innerHTML = '';
+    viewerItem = item;
+    var media;
+    if (item.kind === 'image') {
+      media = document.createElement('img');
+    } else {
+      media = document.createElement('video');
+      media.autoplay = true;
+      media.onended = function () { closeViewer(); };
+    }
+    media.src = item.src;
+    media.onerror = function () { setStatus('No se pudo abrir lo enviado'); closeViewer(); };
+    v.appendChild(media);
+    v.appendChild(line(item.kind === 'video' ? 'OK pausa · ←→ 10 s · Volver para cerrar' : 'Volver para cerrar', 'viewer-hint'));
+    v.className = 'on';
+  }
+
+  function closeViewer() {
+    var v = $('viewer');
+    var media = v.querySelector('video');
+    if (media) { media.pause(); media.removeAttribute('src'); media.load(); }
+    v.className = '';
+    v.innerHTML = '';
+    viewerItem = null;
+  }
+
+  function viewerKey(code) {
+    var media = $('viewer').querySelector('video');
+    if (code === KEY.BACK) return closeViewer();
+    if (!media) return;
+    if (code === KEY.ENTER) { if (media.paused) media.play(); else media.pause(); }
+    if (code === KEY.LEFT || code === KEY.RIGHT) media.currentTime = Math.max(0, media.currentTime + (code === KEY.RIGHT ? 10 : -10));
   }
 
   // ---------- Filas de accesos ----------
@@ -348,18 +482,22 @@
     } else if (url) {
       var img = document.createElement('img');
       img.crossOrigin = 'anonymous';
+      // Las apps de la tele prueban primero una imagen panorámica de su carpeta
+      var tryBanner = !t.icon && t.type === 'tvapp';
       img.onload = function () {
         var color = edgeColor(img);
+        if (tryBanner) el.className += ' wide';
         if (color) {
           el.style.background = color;
           el.className += ' logo-fill';
         }
       };
       img.onerror = function () {
+        if (tryBanner) { tryBanner = false; img.src = url; return; }
         if (img.parentNode) el.removeChild(img);
         el.className += ' noicon';
       };
-      img.src = url;
+      img.src = tryBanner ? url + '&kind=banner' : url;
       el.appendChild(img);
     } else el.className += ' noicon';
     var name = document.createElement('div');
@@ -802,6 +940,10 @@
         after: function () { if (config.widgets.forecast) loadWeather(); else $('w-forecast').className = 'widget hidden'; } },
       newsItem()
     ];
+    items.push({ label: 'Spotify', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
+      get: function () { return config.widgets.spotify !== false; },
+      set: function (v) { config.widgets.spotify = v; },
+      after: function () { loadSpotify(); } });
     var ha = config.widgets.homeassistant;
     if (ha && ha.url && ha.token) {
       items.push({ label: 'Casa (Home Assistant)', list: [{ name: 'Sí', value: true }, { name: 'No', value: false }],
@@ -949,6 +1091,11 @@
   function sideItems() {
     var items = [];
     if ($('w-forecast').className.indexOf('hidden') === -1) items.push({ el: $('w-forecast'), action: openWeather });
+    if ($('w-spotify').className.indexOf('hidden') === -1) {
+      items.push({ el: $('w-spotify'), action: function () { spotifyControl(spotifyNow && spotifyNow.playing ? 'pause' : 'play'); } });
+    }
+    var has = $('w-ha').className.indexOf('hidden') === -1 ? document.querySelectorAll('#w-ha .ha-item') : [];
+    for (var h = 0; h < has.length; h++) items.push({ el: has[h], action: (function (id) { return function () { haAction(id); }; })(has[h].getAttribute('data-id')) });
     var lis = $('w-news').className.indexOf('hidden') === -1 ? document.querySelectorAll('#w-news li') : [];
     for (var i = 0; i < lis.length; i++) items.push({ el: lis[i], news: i, action: (function (n) { return function () { openNews(n); }; })(i) });
     return items;
@@ -984,7 +1131,10 @@
     var items = sideItems();
     if (code === KEY.LEFT) return setZone('rows');
     if (code === KEY.ENTER) return items[sideSel] && items[sideSel].action();
-    if (code === KEY.RIGHT) return;
+    if (code === KEY.RIGHT) {
+      if (items[sideSel] && items[sideSel].el.id === 'w-spotify') spotifyControl('next');
+      return;
+    }
     var i = sideSel + (code === KEY.DOWN ? 1 : -1);
     if (i < 0) return setZone('top');
     if (i >= items.length) return;
@@ -1157,6 +1307,7 @@
   }
 
   function startSaver() {
+    if ($('viewer').className === 'on') return resetIdle();
     closePanels();
     $('saver').className = 'on';
     placeSaverClock($('saverClock'));
@@ -1181,6 +1332,7 @@
     if (!config) return;
     resetIdle();
     if ($('saver').className === 'on') { stopSaver(); e.preventDefault(); return; }
+    if ($('viewer').className === 'on') { viewerKey(code); e.preventDefault(); return; }
 
     if (code === KEY.BACK && isOpen('applist') && appList.mode === 'rows') {
       appList.mode = 'list';
@@ -1293,6 +1445,10 @@
     setInterval(loadNews, 30 * 60 * 1000);
     loadHomeAssistant();
     setInterval(loadHomeAssistant, 60 * 1000);
+    loadSpotify();
+    setInterval(function () { if ($('saver').className !== 'on') loadSpotify(); }, 5000);
+    checkInbox();
+    setInterval(checkInbox, 2000);
     connectTizenBrew();
     watchConfig();
     resetIdle();

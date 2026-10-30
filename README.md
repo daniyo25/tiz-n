@@ -40,6 +40,19 @@ En Ajustes (botón azul) aparecen la dirección del editor y un PIN, por ejemplo
 
 Al guardar, la tele se actualiza sola en unos segundos (si no tiene un panel abierto ni está en reposo). El móvil recuerda el PIN, pero el PIN cambia cada vez que TizenBrew arranca el servicio. "Restablecer" vuelve a `app/config.json`.
 
+### Enviar a la tele
+
+En el editor del móvil, «Enviar a la tele» sube una foto, un vídeo o un audio del móvil (o un enlace directo a uno) y la tele lo abre a pantalla completa. Con un enlace de YouTube abre la app de YouTube con ese vídeo. Con el vídeo: OK pausa, ←→ salta 10 s y Volver cierra. En la tele solo se guarda lo último enviado, en `/home/owner/share/dani-launcher-media/`.
+
+### Home Assistant y Spotify
+
+- **Home Assistant:** en el editor del móvil pon la dirección y un token de larga duración, pulsa «Cargar entidades», marca las que quieras y Guardar. En la tele, OK sobre una luz, enchufe, ventilador, persiana, escena o script la activa.
+- **Spotify:** crea una app en developer.spotify.com con la Redirect URI que indica el editor, pega su Client ID, inicia sesión y pega la dirección final. El widget muestra lo que suena; OK pausa o reanuda y → pasa de canción (necesita Premium para controlarlo).
+
+### Logos
+
+El servicio busca en la carpeta de cada app una imagen panorámica (logo o banner) y, si no hay, el icono. Para ver qué encuentra para una app: `http://<IP de la tele>:8091/icon?id=<id de la app>&debug=1`.
+
 ## Personalizar a mano
 
 La configuración por defecto está en `app/config.json`. Lo que guardes desde la tele o el móvil se guarda en la tele y tiene prioridad sobre este archivo.
