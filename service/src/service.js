@@ -184,16 +184,30 @@ function appImages(appId) {
   return info;
 }
 
+function fastIconPath(appId) {
+  try {
+    var p = (tizen.application.getAppInfo(appId).iconPath || '').replace(/^file:\/\//, '');
+    if (p && fs.statSync(p).isFile()) return p;
+  } catch (e) { /* se busca en la carpeta */ }
+  return '';
+}
+
 function sendIcon(appId, kind, res) {
-  var info = appImages(appId);
-  var path = kind === 'banner' ? info.banner : info.icon;
+  // El icono normal sale directo del iconPath si se puede leer; recorrer la carpeta de la
+  // app solo hace falta para la panorámica o cuando el iconPath falla
+  var path = kind === 'banner' ? '' : (imageCache[appId] ? imageCache[appId].icon : fastIconPath(appId));
+  if (!path) {
+    var info = appImages(appId);
+    path = kind === 'banner' ? info.banner : info.icon;
+  }
   if (!path) return send(res, 404, { ok: false, error: 'Sin imagen' });
   var ext = path.split('.').pop().toLowerCase();
   var type = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
   var stream = fs.createReadStream(path);
   stream.on('error', function (e) { fail(res, e); });
   stream.on('open', function () {
-    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' });
+    // La página añade &v=<arranque> a la URL, así que se puede guardar en caché sin miedo
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'max-age=86400', 'Access-Control-Allow-Origin': '*' });
     stream.pipe(res);
   });
 }

@@ -762,19 +762,53 @@
     var box = document.createElement('span');
     box.className = 'ico';
     box.style.background = color || '#262a33';
-    if (src) {
-      var img = document.createElement('img');
-      img.onerror = function () { if (img.parentNode) box.removeChild(img); };
-      img.src = src;
-      box.appendChild(img);
-    }
+    // El icono se carga solo cuando la línea está cerca de la vista (ver loadVisibleIcons)
+    if (src) box.setAttribute('data-src', src);
     return box;
+  }
+
+  function loadVisibleIcons() {
+    var panel = $('applist');
+    var top = panel.scrollTop - 300, bottom = panel.scrollTop + panel.clientHeight + 600;
+    var boxes = panel.querySelectorAll('.ico[data-src]');
+    for (var i = 0; i < boxes.length; i++) {
+      var row = boxes[i].parentNode;
+      if (row.offsetTop < top || row.offsetTop > bottom) continue;
+      var img = document.createElement('img');
+      img.onerror = function () { if (this.parentNode) this.parentNode.removeChild(this); };
+      img.src = boxes[i].getAttribute('data-src');
+      boxes[i].removeAttribute('data-src');
+      boxes[i].appendChild(img);
+    }
+  }
+
+  // Al moverse solo cambia la línea marcada: redibujar toda la lista en cada pulsación
+  // (con cientos de iconos) bloqueaba la tele
+  function moveListSel(i) {
+    var panel = $('applist');
+    var old = panel.querySelector('.app.sel');
+    if (old) old.className = old.className.replace(' sel', '');
+    appList.sel = i;
+    var el = appList.els && appList.els[i];
+    if (!el) return;
+    el.className += ' sel';
+    scrollToSel(el);
+    loadVisibleIcons();
+  }
+
+  function scrollToSel(selEl) {
+    var panel = $('applist');
+    if (selEl.offsetTop < panel.scrollTop + 80) panel.scrollTop = selEl.offsetTop - 80;
+    else if (selEl.offsetTop + selEl.offsetHeight > panel.scrollTop + panel.clientHeight - 20) {
+      panel.scrollTop = selEl.offsetTop + selEl.offsetHeight - panel.clientHeight + 20;
+    }
   }
 
   function renderAppList() {
     var panel = $('applist');
     panel.innerHTML = '';
     var selEl = null;
+    appList.els = [];
     if (appList.mode === 'list') {
       panel.appendChild(line('Editar', 'title'));
       appList.items.forEach(function (it, i) {
@@ -804,6 +838,7 @@
         el.appendChild(name);
         el.appendChild(sub);
         panel.appendChild(el);
+        appList.els[i] = el;
         if (i === appList.sel) selEl = el;
       });
     } else {
@@ -816,12 +851,8 @@
       panel.appendChild(line('Volver para cancelar', 'head'));
     }
     // Mantener visible la línea seleccionada
-    if (selEl) {
-      if (selEl.offsetTop < panel.scrollTop + 80) panel.scrollTop = selEl.offsetTop - 80;
-      else if (selEl.offsetTop + selEl.offsetHeight > panel.scrollTop + panel.clientHeight - 20) {
-        panel.scrollTop = selEl.offsetTop + selEl.offsetHeight - panel.clientHeight + 20;
-      }
-    }
+    if (selEl) scrollToSel(selEl);
+    loadVisibleIcons();
   }
 
   function changeWidget(it, dir) {
@@ -891,14 +922,15 @@
   function appListKey(code) {
     if (appList.mode === 'list') {
       if (code === KEY.UP || code === KEY.DOWN) {
-        appList.sel = nextSelectable(appList.sel, code === KEY.DOWN ? 1 : -1);
+        return moveListSel(nextSelectable(appList.sel, code === KEY.DOWN ? 1 : -1));
       } else if ((code === KEY.LEFT || code === KEY.RIGHT) && appList.items[appList.sel].widget) {
         return changeWidget(appList.items[appList.sel], code === KEY.RIGHT ? 1 : -1);
       } else if (code === KEY.LEFT || code === KEY.RIGHT) {
         // Saltar de 10 en 10 para listas largas
-        for (var k = 0; k < 10; k++) appList.sel = nextSelectable(appList.sel, code === KEY.RIGHT ? 1 : -1);
+        var to = appList.sel;
+        for (var k = 0; k < 10; k++) to = nextSelectable(to, code === KEY.RIGHT ? 1 : -1);
+        return moveListSel(to);
       } else if (code === KEY.ENTER) return openRowChooser();
-      renderAppList();
     } else {
       if (code === KEY.UP || code === KEY.DOWN) {
         appList.choiceSel = Math.max(0, Math.min(appList.choices.length - 1, appList.choiceSel + (code === KEY.DOWN ? 1 : -1)));
