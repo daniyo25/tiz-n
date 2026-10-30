@@ -154,6 +154,10 @@
         return;
       }
       panel.innerHTML = '';
+      var head = document.createElement('div');
+      head.className = 'head';
+      head.textContent = data.apps.length + ' apps · ↑↓ para desplazarte · Volver para cerrar';
+      panel.appendChild(head);
       data.apps.forEach(function (a) {
         var row = document.createElement('div');
         row.textContent = a.name + '  ·  ' + a.id;
@@ -217,6 +221,19 @@
 
   // Mando
   document.addEventListener('keydown', function (e) {
+    var panel = $('applist');
+    if (panel.className === 'open') {
+      // Con la lista abierta, arriba/abajo la desplazan; cualquier otra tecla de color o Volver la cierra
+      if (e.keyCode === KEY.UP || e.keyCode === KEY.DOWN) {
+        panel.scrollTop += (e.keyCode === KEY.DOWN ? 1 : -1) * (panel.clientHeight - 80);
+        e.preventDefault();
+        return;
+      }
+      if (e.keyCode === KEY.LEFT || e.keyCode === KEY.RIGHT || e.keyCode === KEY.ENTER) {
+        e.preventDefault();
+        return;
+      }
+    }
     switch (e.keyCode) {
       case KEY.LEFT: move(-1, 0); break;
       case KEY.RIGHT: move(1, 0); break;
